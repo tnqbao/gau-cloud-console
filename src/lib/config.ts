@@ -7,6 +7,7 @@ export const AUTH_ENDPOINTS = {
   register: "/api/auth/register",
   profile: "/api/auth/profile",
   logout: "/api/auth/logout",
+  googleSSO: "/api/auth/google",
 } as const;
 
 // Storage endpoints (server-side proxy)

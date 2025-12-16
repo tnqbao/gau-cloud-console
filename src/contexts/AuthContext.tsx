@@ -7,7 +7,10 @@ import { useRouter } from "next/router";
 // Response types from backend API
 interface LoginResponse {
   access_token: string;
-  token_type: string;
+  token_type?: string;
+  expires_in?: number;
+  refresh_token?: string;
+  status?: number;
   user?: User;
 }
 
@@ -24,6 +27,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   login: (data: LoginRequest) => Promise<void>;
   register: (data: RegisterRequest) => Promise<void>;
+  loginWithGoogle: (token: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -82,6 +86,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     router.push("/dashboard");
   };
 
+  const loginWithGoogle = async (token: string) => {
+    const response = await api.post<LoginResponse>(AUTH_ENDPOINTS.googleSSO, { token }, {
+      skipAuth: true,
+    });
+    // Backend returns access_token
+    setToken(response.access_token);
+    // Fetch user profile after Google login
+    await refreshProfile();
+    router.push("/dashboard");
+  };
+
   const logout = async () => {
     try {
       await api.post(AUTH_ENDPOINTS.logout);
@@ -102,6 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isAuthenticated: !!user,
         login,
         register,
+        loginWithGoogle,
         logout,
         refreshProfile,
       }}
