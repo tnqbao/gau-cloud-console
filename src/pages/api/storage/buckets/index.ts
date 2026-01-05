@@ -1,4 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next";
+import { safeJsonParse } from "@/lib/api-utils";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.gauas.online";
 
@@ -22,8 +23,13 @@ export default async function handler(
         },
       });
 
-      const data = await response.json();
-      return res.status(response.status).json(data);
+      try {
+        const data = await safeJsonParse(response);
+        return res.status(response.status).json(data || []);
+      } catch (parseError: unknown) {
+        const message = parseError instanceof Error ? parseError.message : "Failed to parse response";
+        return res.status(500).json({ message });
+      }
     }
 
     if (req.method === "POST") {
@@ -36,8 +42,13 @@ export default async function handler(
         body: JSON.stringify(req.body),
       });
 
-      const data = await response.json();
-      return res.status(response.status).json(data);
+      try {
+        const data = await safeJsonParse(response);
+        return res.status(response.status).json(data || { message: "Success" });
+      } catch (parseError: unknown) {
+        const message = parseError instanceof Error ? parseError.message : "Failed to parse response";
+        return res.status(500).json({ message });
+      }
     }
 
     return res.status(405).json({ message: "Method not allowed" });

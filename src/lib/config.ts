@@ -1,5 +1,8 @@
-// API Configuration - Using local API routes to bypass CORS
+// API Configuration - Using local API routes (server-side proxy) to bypass CORS
 export const API_BASE_URL = "";
+
+// Direct backend API URL (for upload only - bypass Next.js API to reduce server load)
+export const BACKEND_API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.gauas.online";
 
 // Auth endpoints (server-side proxy)
 export const AUTH_ENDPOINTS = {
@@ -15,7 +18,10 @@ export const STORAGE_ENDPOINTS = {
   buckets: "/api/storage/buckets",
   bucketById: (id: string) => `/api/storage/buckets/${id}`,
   bucketAccess: (id: string) => `/api/storage/buckets/${id}/access`,
-  bucketObjects: (id: string) => `/api/storage/buckets/${id}/objects`,
+  bucketObjects: (id: string, path?: string) => {
+    const base = `/api/storage/buckets/${id}/objects`;
+    return path ? `${base}?path=${encodeURIComponent(path)}` : base;
+  },
 } as const;
 
 // IAM endpoints (server-side proxy)

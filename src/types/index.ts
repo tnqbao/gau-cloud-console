@@ -35,6 +35,31 @@ export interface Bucket {
   ownerId: string;
 }
 
+// Backend object response
+export interface StorageObject {
+  id: string;
+  bucket_id: string;
+  content_type: string;
+  origin_name: string;
+  parent_path: string;
+  created_at: string;
+  last_modified: string;
+  size: number;
+  url: string;
+  file_hash: string;
+}
+
+// Objects list response from API
+export interface BucketObjectsResponse {
+  folder_count: number;
+  folders: string[];
+  object_count: number;
+  objects: StorageObject[];
+  path: string;
+  status: number;
+}
+
+// Frontend object type (for tree view compatibility)
 export interface BucketObject {
   id: string;
   name: string;
@@ -42,6 +67,9 @@ export interface BucketObject {
   type: "file" | "folder";
   size?: number;
   lastModified?: string;
+  contentType?: string;
+  url?: string;
+  fileHash?: string;
   children?: BucketObject[];
 }
 
