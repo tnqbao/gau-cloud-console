@@ -5,9 +5,10 @@ interface DialogProps {
   open: boolean;
   onClose: () => void;
   children: React.ReactNode;
+  className?: string;
 }
 
-export function Dialog({ open, onClose, children }: DialogProps) {
+export function Dialog({ open, onClose, children, className }: DialogProps) {
   React.useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -31,7 +32,7 @@ export function Dialog({ open, onClose, children }: DialogProps) {
         onClick={onClose}
         aria-hidden="true"
       />
-      <div className="relative z-50 w-full max-w-lg rounded-lg bg-background p-6 shadow-lg">
+      <div className={cn("relative z-50 w-full max-w-lg rounded-lg bg-background p-6 shadow-lg", className)}>
         {children}
       </div>
     </div>

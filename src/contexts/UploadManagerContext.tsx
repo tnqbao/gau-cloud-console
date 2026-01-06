@@ -47,7 +47,7 @@ export interface UploadedObject {
 interface UploadManagerContextType {
   uploadingFiles: UploadingFile[];
   completedFiles: UploadResult[];
-  addFiles: (bucketId: string, files: File[], path?: string) => void;
+  addFiles: (bucketId: string, files: File[], path?: string) => Promise<void>;
   cancelUpload: (fileId: string) => void;
   cancelAllUploads: () => void;
   clearCompleted: () => void;
@@ -297,34 +297,42 @@ export function UploadManagerProvider({ children }: { children: ReactNode }) {
         return { success: false, size: 0 };
       };
 
-      // Upload chunks in parallel batches
+      // Upload chunks in parallel batches with real-time progress updates
       for (let i = 0; i < chunkIndices.length; i += PARALLEL_CHUNK_LIMIT) {
         if (abortController.signal.aborted) throw new Error("Upload cancelled");
 
         const batchIndices = chunkIndices.slice(i, i + PARALLEL_CHUNK_LIMIT);
 
-        // Upload batch in parallel
-        const results = await Promise.all(batchIndices.map(uploadSingleChunk));
+        // Upload batch in parallel with individual progress tracking
+        const uploadPromises = batchIndices.map(async (chunkIndex) => {
+          const result = await uploadSingleChunk(chunkIndex);
 
+          if (result.success) {
+            // Update progress immediately after each chunk completes
+            uploadedChunks++;
+            totalBytesUploaded += result.size;
+
+            const elapsed = (Date.now() - startTime) / 1000;
+            const speed = elapsed > 0 ? totalBytesUploaded / elapsed : 0;
+            // Progress: 10% for init, 10-85% for upload chunks
+            const progress = 10 + Math.round((uploadedChunks / total_chunks) * 75);
+
+            updateFileProgress(id, {
+              phase: "uploading",
+              progress,
+              message: `Uploading... ${Math.round((totalBytesUploaded / file.size) * 100)}%`,
+              speed,
+              uploadedChunks,
+              totalChunks: total_chunks
+            });
+          }
+
+          return result;
+        });
+
+        const results = await Promise.all(uploadPromises);
         const failed = results.find(r => !r.success);
         if (failed) throw new Error("Failed to upload file part");
-
-        uploadedChunks += results.length;
-        totalBytesUploaded += results.reduce((sum, r) => sum + r.size, 0);
-
-        const elapsed = (Date.now() - startTime) / 1000;
-        const speed = elapsed > 0 ? totalBytesUploaded / elapsed : 0;
-        // Progress: 10% for init, 10-85% for upload chunks
-        const progress = 10 + Math.round((uploadedChunks / total_chunks) * 75);
-
-        updateFileProgress(id, {
-          phase: "uploading",
-          progress,
-          message: `Uploading... ${Math.round((totalBytesUploaded / file.size) * 100)}%`,
-          speed,
-          uploadedChunks,
-          totalChunks: total_chunks
-        });
       }
 
       // ===== Step 3: Complete Upload (Direct to Backend) =====
@@ -416,11 +424,111 @@ export function UploadManagerProvider({ children }: { children: ReactNode }) {
     return result;
   }, [directUpload, chunkedUpload, removeUploadingFile, addCompletedFile]);
 
+  // Helper to get unique filename if conflict
+  const getUniqueFileName = async (bucketId: string, fileName: string, path: string): Promise<string> => {
+    try {
+      // Fetch existing files in the target path
+      const response = await apiRequest<{
+        objects?: Array<{ origin_name: string }>;
+      }>(`${BACKEND_API_URL}/api/v1/cloud/buckets/${bucketId}/objects?path=${encodeURIComponent(path || "")}`);
+
+      const existingNames = new Set((response.objects || []).map(obj => obj.origin_name));
+
+      if (!existingNames.has(fileName)) {
+        return fileName;
+      }
+
+      // File exists, generate unique name
+      const lastDotIndex = fileName.lastIndexOf(".");
+      const hasExtension = lastDotIndex > 0 && lastDotIndex < fileName.length - 1;
+
+      let baseName = fileName;
+      let extension = "";
+
+      if (hasExtension) {
+        baseName = fileName.substring(0, lastDotIndex);
+        extension = fileName.substring(lastDotIndex);
+      }
+
+      let counter = 1;
+      let newName = `${baseName}(${counter})${extension}`;
+
+      while (existingNames.has(newName)) {
+        counter++;
+        newName = `${baseName}(${counter})${extension}`;
+      }
+
+      return newName;
+    } catch {
+      // If error checking, just return original name
+      return fileName;
+    }
+  };
+
+  // Helper to create temp file for folder (to make folder appear immediately)
+  const createFolderPlaceholder = async (bucketId: string, folderPath: string): Promise<string | null> => {
+    try {
+      const placeholderName = ".folderkeeper";
+      const emptyFile = new File([], placeholderName, { type: "text/plain" });
+
+      const formData = new FormData();
+      formData.append("file", emptyFile);
+      formData.append("path", folderPath);
+
+      const token = getToken();
+      const headers: HeadersInit = { "X-Device-ID": getDeviceId() };
+      if (token) (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
+
+      const response = await fetch(`${BACKEND_API_URL}/api/v1/cloud/buckets/${bucketId}/objects`, {
+        method: "POST",
+        headers,
+        body: formData,
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        return result.object?.id || null;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  // Helper to delete temp placeholder file
+  const deleteFolderPlaceholder = async (bucketId: string, objectId: string): Promise<void> => {
+    try {
+      await apiRequest(`${BACKEND_API_URL}/api/v1/cloud/buckets/${bucketId}/objects/${objectId}`, {
+        method: "DELETE",
+      });
+    } catch {
+      // Ignore errors when deleting placeholder
+    }
+  };
+
   // Add files to upload queue
-  const addFiles = useCallback((bucketId: string, files: File[], path: string = "") => {
-    const newUploads: UploadingFile[] = files.map(file => ({
+  const addFiles = useCallback(async (bucketId: string, files: File[], path: string = "") => {
+    // Check for duplicate names and rename if necessary
+    const processedFiles: Array<{ originalFile: File; finalFile: File }> = [];
+
+    for (const file of files) {
+      const uniqueName = await getUniqueFileName(bucketId, file.name, path);
+      const finalFile = uniqueName === file.name
+        ? file
+        : new File([file], uniqueName, { type: file.type, lastModified: file.lastModified });
+
+      processedFiles.push({ originalFile: file, finalFile });
+    }
+
+    // If uploading to a folder path, create placeholder to make folder appear immediately
+    let placeholderId: string | null = null;
+    if (path && files.length > 0) {
+      placeholderId = await createFolderPlaceholder(bucketId, path);
+    }
+
+    const newUploads: UploadingFile[] = processedFiles.map(({ finalFile }) => ({
       id: generateId(),
-      file,
+      file: finalFile,
       bucketId,
       path,
       progress: 0,
@@ -432,9 +540,18 @@ export function UploadManagerProvider({ children }: { children: ReactNode }) {
     setUploadingFiles(prev => [...prev, ...newUploads]);
 
     // Start uploads
-    newUploads.forEach(upload => {
-      processUpload(upload);
-    });
+    const uploadPromises = newUploads.map(upload => processUpload(upload));
+
+    // Wait for all uploads to complete, then delete placeholder
+    if (placeholderId) {
+      Promise.all(uploadPromises).then(() => {
+        // Delete placeholder after all files uploaded
+        deleteFolderPlaceholder(bucketId, placeholderId);
+      }).catch(() => {
+        // Still try to delete placeholder even if uploads fail
+        deleteFolderPlaceholder(bucketId, placeholderId);
+      });
+    }
   }, [processUpload]);
 
   // Cancel specific upload
