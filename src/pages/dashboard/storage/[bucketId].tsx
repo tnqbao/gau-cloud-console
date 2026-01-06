@@ -193,18 +193,15 @@ function UploadingRow({ uploadFile, onCancel }: UploadingRowProps) {
     }
   };
 
-  // Can only cancel during preparing or uploading phases
   const canCancel = uploadFile.phase === "preparing" || uploadFile.phase === "uploading";
   const isActive = uploadFile.phase !== "failed" && uploadFile.phase !== "completed";
 
   return (
     <div className="flex items-center gap-2 rounded-md px-4 py-2 bg-muted/30 opacity-80">
-      {/* Icon with animation */}
       <div className={cn("shrink-0", isActive && "animate-pulse")}>
         <FileIcon type="file" name={uploadFile.file.name} className="w-6 h-6" />
       </div>
 
-      {/* Name and progress */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="text-sm truncate text-muted-foreground">
@@ -214,7 +211,6 @@ function UploadingRow({ uploadFile, onCancel }: UploadingRowProps) {
             {uploadFile.progress}%
           </span>
         </div>
-        {/* Progress bar with smooth animation */}
         <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mt-1 overflow-hidden">
           <div
             className={cn(
@@ -224,7 +220,6 @@ function UploadingRow({ uploadFile, onCancel }: UploadingRowProps) {
             )}
             style={{ width: `${uploadFile.progress}%` }}
           >
-            {/* Shimmer effect - moving highlight from left to right */}
             {isActive && (
               <div
                 className="absolute inset-0 overflow-hidden rounded-full"
@@ -248,17 +243,14 @@ function UploadingRow({ uploadFile, onCancel }: UploadingRowProps) {
         </div>
       </div>
 
-      {/* Size */}
       <span className="w-24 text-right text-xs text-muted-foreground">
         {formatBytes(uploadFile.file.size)}
       </span>
 
-      {/* Status */}
       <span className="w-32 text-right text-xs text-muted-foreground">
         {getStatusText()}
       </span>
 
-      {/* Cancel button */}
       {canCancel ? (
         <button
           onClick={(e) => {
@@ -273,76 +265,6 @@ function UploadingRow({ uploadFile, onCancel }: UploadingRowProps) {
       ) : (
         <span className="w-8"></span>
       )}
-    </div>
-  );
-}
-
-interface UploadingFolderRowProps {
-  folderName: string;
-  folderPath: string;
-  completedCount: number;
-  totalCount: number;
-  uploadProgress: number;
-  onFolderClick: (path: string) => void;
-}
-
-function UploadingFolderRow({
-  folderName,
-  folderPath,
-  completedCount,
-  totalCount,
-  uploadProgress,
-  onFolderClick
-}: UploadingFolderRowProps) {
-  return (
-    <div
-      className="flex items-center gap-2 rounded-md px-4 py-2 hover:bg-muted/50 group cursor-pointer bg-blue-50/50 dark:bg-blue-950/20 border-l-2 border-blue-500"
-      onClick={() => onFolderClick(folderPath)}
-    >
-      {/* Folder Icon with animation */}
-      <div className="shrink-0 animate-pulse">
-        <FileIcon type="folder" name={folderName} className="w-6 h-6" />
-      </div>
-
-      {/* Name and progress */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="text-sm truncate font-medium text-blue-600 dark:text-blue-400">
-            {folderName}
-          </span>
-          <span className="text-xs font-medium text-blue-600 dark:text-blue-400">
-            {completedCount}/{totalCount}
-          </span>
-        </div>
-        {/* Progress bar */}
-        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mt-1 overflow-hidden">
-          <div
-            className="h-2 rounded-full relative bg-gradient-to-r from-blue-400 to-blue-600 transition-all duration-500 ease-out"
-            style={{ width: `${uploadProgress}%` }}
-          >
-            {/* Shimmer effect */}
-            <div
-              className="absolute inset-0 overflow-hidden rounded-full"
-              style={{
-                background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.4) 50%, transparent 100%)',
-                animation: 'shimmer 1.5s infinite',
-              }}
-            />
-          </div>
-        </div>
-        <div className="flex items-center gap-2 mt-0.5">
-          <span className="text-xs text-blue-600 dark:text-blue-400">
-            Uploading folder... {uploadProgress}%
-          </span>
-        </div>
-      </div>
-
-      {/* Placeholder for alignment */}
-      <span className="w-24 text-right text-xs text-muted-foreground">—</span>
-      <span className="w-32 text-right text-xs text-blue-600 dark:text-blue-400">
-        Uploading
-      </span>
-      <span className="w-8"></span>
     </div>
   );
 }
@@ -369,6 +291,8 @@ export default function BucketDetailPage() {
     navigateToFolder,
     navigateUp,
     navigateToRoot,
+    addObject,
+    addFolder,
   } = useBucketObjects(bucketId);
 
   const { getUploadingFilesForBucket, cancelUpload, completedFiles, uploadingFiles: allUploadingFiles } = useUploadManager();
@@ -376,25 +300,23 @@ export default function BucketDetailPage() {
   // Get uploading files for this bucket and current path
   const uploadingFiles = bucketId ? getUploadingFilesForBucket(bucketId, currentPath) : [];
 
-  // Track previous uploading count to detect when uploads complete
-  const prevUploadingCountRef = useRef(0);
+  // Track which folders we've already created for uploads
+  const createdFoldersRef = useRef<Set<string>>(new Set());
 
-  // Get uploading folders - folders that have files being uploaded
-  const uploadingFolders = React.useMemo(() => {
-    if (!bucketId) return [];
+  // Auto-create folder entries when files are being uploaded to new folders
+  useEffect(() => {
+    if (!bucketId) return;
 
     const allFiles = allUploadingFiles.filter(f => f.bucketId === bucketId);
-    const folderMap = new Map<string, { name: string; path: string; files: typeof allFiles }>();
 
     for (const file of allFiles) {
       if (!file.path) continue;
 
-      // Determine if this file belongs to a subfolder of currentPath
+      // Extract immediate child folder from the path relative to currentPath
       let folderName = "";
       let folderPath = "";
 
       if (currentPath) {
-        // We're in a subfolder, check if file is in a deeper subfolder
         if (file.path.startsWith(currentPath + "/")) {
           const relativePath = file.path.substring(currentPath.length + 1);
           const firstSlash = relativePath.indexOf("/");
@@ -402,12 +324,8 @@ export default function BucketDetailPage() {
             folderName = relativePath.substring(0, firstSlash);
             folderPath = `${currentPath}/${folderName}`;
           }
-        } else if (file.path === currentPath) {
-          // File is directly in current path, not in a subfolder
-          continue;
         }
       } else {
-        // We're at root, check if file is in a folder
         const firstSlash = file.path.indexOf("/");
         if (firstSlash > 0) {
           folderName = file.path.substring(0, firstSlash);
@@ -415,31 +333,15 @@ export default function BucketDetailPage() {
         }
       }
 
-      if (folderName) {
-        // Check if folder already exists in objects list
+      if (folderName && !createdFoldersRef.current.has(folderPath)) {
         const folderExists = objects.some(obj => obj.type === "folder" && obj.name === folderName);
         if (!folderExists) {
-          if (!folderMap.has(folderPath)) {
-            folderMap.set(folderPath, { name: folderName, path: folderPath, files: [] });
-          }
-          folderMap.get(folderPath)!.files.push(file);
+          addFolder(folderName);
+          createdFoldersRef.current.add(folderPath);
         }
       }
     }
-
-    return Array.from(folderMap.values()).map(folder => {
-      const completedCount = folder.files.filter(f => f.phase === "completed").length;
-      const totalCount = folder.files.length;
-
-      return {
-        name: folder.name,
-        path: folder.path,
-        uploadProgress: totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0,
-        completedCount,
-        totalCount,
-      };
-    });
-  }, [bucketId, allUploadingFiles, currentPath, objects]);
+  }, [allUploadingFiles, bucketId, currentPath, objects, addFolder]);
 
   // Fetch buckets list to get bucket name
   useEffect(() => {
@@ -454,46 +356,41 @@ export default function BucketDetailPage() {
     }
   }, [bucketId, fetchObjects]);
 
-  // Refresh objects when uploads complete - only once per new completion
+  // Add new objects when uploads complete - without showing loading
   useEffect(() => {
     const currentCount = completedFiles.length;
     if (currentCount > lastCompletedCountRef.current && bucketId) {
       // Check if any completed file is for this bucket
       const newCompletions = completedFiles.slice(lastCompletedCountRef.current);
-      const hasRelevantCompletion = newCompletions.some(file =>
+      const relevantCompletions = newCompletions.filter(file =>
         file.success && file.object?.bucket_id === bucketId
       );
 
-      if (hasRelevantCompletion) {
-        // Refresh immediately when files complete
-        fetchObjects();
+      if (relevantCompletions.length > 0) {
+        // Add each new object to the list without fetching
+        relevantCompletions.forEach(completion => {
+          if (completion.object) {
+            addObject(completion.object);
+          }
+        });
         lastCompletedCountRef.current = currentCount;
       }
     }
     lastCompletedCountRef.current = currentCount;
-  }, [completedFiles, bucketId, fetchObjects]);
+  }, [completedFiles, bucketId, addObject]);
 
-  // Also refresh when uploading files decrease (files complete and removed from uploading list)
-  useEffect(() => {
-    const currentUploadingCount = uploadingFiles.length;
-
-    // If uploading count decreased and we had files uploading before
-    if (currentUploadingCount < prevUploadingCountRef.current && prevUploadingCountRef.current > 0) {
-      // Refresh with a small delay to ensure backend has processed
-      const timer = setTimeout(() => {
-        fetchObjects();
-      }, 300);
-
-      prevUploadingCountRef.current = currentUploadingCount;
-      return () => clearTimeout(timer);
-    }
-
-    prevUploadingCountRef.current = currentUploadingCount;
-  }, [uploadingFiles.length, fetchObjects]);
-
-  const handleUploadStarted = () => {
-    // Refresh to show folder placeholders immediately
-    fetchObjects();
+  const handleUploadStarted = (foldersToCreate: string[]) => {
+    // Create folders immediately
+    foldersToCreate.forEach(folderName => {
+      const folderPath = currentPath ? `${currentPath}/${folderName}` : folderName;
+      if (!createdFoldersRef.current.has(folderPath)) {
+        const folderExists = objects.some(obj => obj.type === "folder" && obj.name === folderName);
+        if (!folderExists) {
+          addFolder(folderName);
+          createdFoldersRef.current.add(folderPath);
+        }
+      }
+    });
   };
 
   // Build breadcrumb parts
@@ -601,18 +498,6 @@ export default function BucketDetailPage() {
                     <span className="w-8"></span>
                   </div>
                   <div className="divide-y">
-                    {/* Uploading folders first */}
-                    {uploadingFolders.map((folder) => (
-                      <UploadingFolderRow
-                        key={`uploading-folder-${folder.path}`}
-                        folderName={folder.name}
-                        folderPath={folder.path}
-                        completedCount={folder.completedCount}
-                        totalCount={folder.totalCount}
-                        uploadProgress={folder.uploadProgress}
-                        onFolderClick={navigateToFolder}
-                      />
-                    ))}
                     {/* Uploading files (shown with opacity and progress) */}
                     {uploadingFiles.map((uploadFile) => (
                       <UploadingRow

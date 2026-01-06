@@ -169,6 +169,55 @@ export function useBucketObjects(bucketId: string) {
     await navigateToFolder("");
   }, [navigateToFolder]);
 
+  // Add a new object to the list without fetching
+  const addObject = useCallback((newObject: StorageObject) => {
+    const mappedObject = mapStorageObject(newObject);
+
+    // Only add if it belongs to current path and doesn't exist
+    if (mappedObject.path === currentPath) {
+      setObjects(prev => {
+        // Check if object already exists
+        if (prev.some(obj => obj.id === mappedObject.id)) {
+          return prev;
+        }
+
+        // Add new file to the end (after folders)
+        const folders = prev.filter(obj => obj.type === "folder");
+        const files = prev.filter(obj => obj.type === "file");
+        return [...folders, ...files, mappedObject];
+      });
+
+      // Update count
+      setObjectCount(prev => prev + 1);
+    }
+  }, [currentPath]);
+
+  // Add a new folder to the list without fetching
+  const addFolder = useCallback((folderName: string) => {
+    if (!folderName) return;
+
+    const folderObject = mapFolder(folderName, currentPath);
+
+    setObjects(prev => {
+      // Check if folder already exists
+      if (prev.some(obj => obj.type === "folder" && obj.name === folderName)) {
+        return prev;
+      }
+
+      // Add folder at the beginning
+      const folders = prev.filter(obj => obj.type === "folder");
+      const files = prev.filter(obj => obj.type === "file");
+      return [...folders, folderObject, ...files];
+    });
+
+    setFolders(prev => {
+      if (prev.includes(folderName)) return prev;
+      return [...prev, folderName];
+    });
+
+    setFolderCount(prev => prev + 1);
+  }, [currentPath]);
+
   return {
     objects,
     folders,
@@ -181,5 +230,7 @@ export function useBucketObjects(bucketId: string) {
     navigateToFolder,
     navigateUp,
     navigateToRoot,
+    addObject,
+    addFolder,
   };
 }

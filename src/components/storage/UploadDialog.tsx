@@ -9,7 +9,7 @@ interface UploadDialogProps {
   bucketId: string;
   isOpen: boolean;
   onClose: () => void;
-  onUploadStarted?: () => void;
+  onUploadStarted?: (foldersToCreate: string[]) => void;
   currentPath?: string;
 }
 
@@ -254,26 +254,46 @@ export function UploadDialog({
       return acc;
     }, {} as Record<string, File[]>);
 
-    // Start all uploads (will create placeholders for folders)
+    // Extract folders that need to be created immediately
+    const foldersToCreate: string[] = [];
+    for (const path of Object.keys(pathGroups)) {
+      if (path) {
+        // Extract immediate child folder from path relative to currentPath
+        let folderName = "";
+
+        if (currentPath) {
+          if (path.startsWith(currentPath + "/")) {
+            const relativePath = path.substring(currentPath.length + 1);
+            const firstSlash = relativePath.indexOf("/");
+            folderName = firstSlash > 0 ? relativePath.substring(0, firstSlash) : relativePath;
+          }
+        } else {
+          const firstSlash = path.indexOf("/");
+          folderName = firstSlash > 0 ? path.substring(0, firstSlash) : path;
+        }
+
+        if (folderName && !foldersToCreate.includes(folderName)) {
+          foldersToCreate.push(folderName);
+        }
+      }
+    }
+
+    // Start all uploads
     const uploadPromises: Promise<void>[] = [];
     for (const [path, files] of Object.entries(pathGroups)) {
       uploadPromises.push(addFiles(bucketId, files, path));
     }
 
-    // Wait a bit for placeholders to be created, then trigger refresh
-    setTimeout(() => {
-      onUploadStarted?.();
-    }, 200);
+    // Wait for uploads to be queued
+    await Promise.all(uploadPromises);
+
+    // Trigger callback with folders to create BEFORE closing dialog
+    onUploadStarted?.(foldersToCreate);
 
     // Clear selection and close dialog
     setFileItems([]);
     setExpandedFolders(new Set());
     onClose();
-
-    // Continue uploads in background
-    Promise.all(uploadPromises).catch(() => {
-      // Ignore errors, they're handled in upload manager
-    });
   };
 
   const handleClose = () => {

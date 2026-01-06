@@ -428,9 +428,13 @@ export function UploadManagerProvider({ children }: { children: ReactNode }) {
   const getUniqueFileName = async (bucketId: string, fileName: string, path: string): Promise<string> => {
     try {
       // Fetch existing files in the target path
+      // Construct URL properly to avoid 301 redirects
+      const pathParam = path ? `?path=${encodeURIComponent(path)}` : '';
+      const url = `${BACKEND_API_URL}/api/v1/cloud/buckets/${bucketId}/objects${pathParam}`;
+
       const response = await apiRequest<{
         objects?: Array<{ origin_name: string }>;
-      }>(`${BACKEND_API_URL}/api/v1/cloud/buckets/${bucketId}/objects?path=${encodeURIComponent(path || "")}`);
+      }>(url);
 
       const existingNames = new Set((response.objects || []).map(obj => obj.origin_name));
 
@@ -459,50 +463,10 @@ export function UploadManagerProvider({ children }: { children: ReactNode }) {
       }
 
       return newName;
-    } catch {
+    } catch (error) {
       // If error checking, just return original name
+      console.warn('Error checking duplicate filename:', error);
       return fileName;
-    }
-  };
-
-  // Helper to create temp file for folder (to make folder appear immediately)
-  const createFolderPlaceholder = async (bucketId: string, folderPath: string): Promise<string | null> => {
-    try {
-      const placeholderName = ".folderkeeper";
-      const emptyFile = new File([], placeholderName, { type: "text/plain" });
-
-      const formData = new FormData();
-      formData.append("file", emptyFile);
-      formData.append("path", folderPath);
-
-      const token = getToken();
-      const headers: HeadersInit = { "X-Device-ID": getDeviceId() };
-      if (token) (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
-
-      const response = await fetch(`${BACKEND_API_URL}/api/v1/cloud/buckets/${bucketId}/objects`, {
-        method: "POST",
-        headers,
-        body: formData,
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        return result.object?.id || null;
-      }
-      return null;
-    } catch {
-      return null;
-    }
-  };
-
-  // Helper to delete temp placeholder file
-  const deleteFolderPlaceholder = async (bucketId: string, objectId: string): Promise<void> => {
-    try {
-      await apiRequest(`${BACKEND_API_URL}/api/v1/cloud/buckets/${bucketId}/objects/${objectId}`, {
-        method: "DELETE",
-      });
-    } catch {
-      // Ignore errors when deleting placeholder
     }
   };
 
@@ -520,12 +484,6 @@ export function UploadManagerProvider({ children }: { children: ReactNode }) {
       processedFiles.push({ originalFile: file, finalFile });
     }
 
-    // If uploading to a folder path, create placeholder to make folder appear immediately
-    let placeholderId: string | null = null;
-    if (path && files.length > 0) {
-      placeholderId = await createFolderPlaceholder(bucketId, path);
-    }
-
     const newUploads: UploadingFile[] = processedFiles.map(({ finalFile }) => ({
       id: generateId(),
       file: finalFile,
@@ -540,18 +498,9 @@ export function UploadManagerProvider({ children }: { children: ReactNode }) {
     setUploadingFiles(prev => [...prev, ...newUploads]);
 
     // Start uploads
-    const uploadPromises = newUploads.map(upload => processUpload(upload));
-
-    // Wait for all uploads to complete, then delete placeholder
-    if (placeholderId) {
-      Promise.all(uploadPromises).then(() => {
-        // Delete placeholder after all files uploaded
-        deleteFolderPlaceholder(bucketId, placeholderId);
-      }).catch(() => {
-        // Still try to delete placeholder even if uploads fail
-        deleteFolderPlaceholder(bucketId, placeholderId);
-      });
-    }
+    newUploads.forEach(upload => {
+      processUpload(upload);
+    });
   }, [processUpload]);
 
   // Cancel specific upload
