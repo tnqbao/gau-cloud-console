@@ -184,12 +184,38 @@ export function UploadManagerProvider({ children }: { children: ReactNode }) {
           if (xhr.status >= 200 && xhr.status < 300) {
             const response = JSON.parse(xhr.responseText);
             updateFileProgress(id, { phase: "completed", progress: 100, message: "Completed" });
-            resolve({
-              success: true,
-              fileId: id,
-              object: response.object,
-              duplicated: response.duplicated,
-            });
+
+            // Ensure object has all required fields
+            if (response.object) {
+              const completeObject: UploadedObject = {
+                id: response.object.id,
+                bucket_id: response.object.bucket_id || bucketId,
+                content_type: response.object.content_type || file.type || "application/octet-stream",
+                origin_name: response.object.origin_name || file.name,
+                parent_path: response.object.parent_path !== undefined ? response.object.parent_path : (path || ""),
+                created_at: response.object.created_at || new Date().toISOString(),
+                last_modified: response.object.last_modified || new Date().toISOString(),
+                size: response.object.size || file.size,
+                url: response.object.url || "",
+                file_hash: response.object.file_hash || "",
+              };
+
+              console.log('[UploadManager] Direct upload completed:', completeObject.origin_name, 'parent_path:', completeObject.parent_path);
+
+              resolve({
+                success: true,
+                fileId: id,
+                object: completeObject,
+                duplicated: response.duplicated,
+              });
+            } else {
+              resolve({
+                success: true,
+                fileId: id,
+                object: response.object,
+                duplicated: response.duplicated,
+              });
+            }
           } else {
             const error = JSON.parse(xhr.responseText);
             reject(new Error(error.message || `Upload failed: ${xhr.status}`));
@@ -386,12 +412,29 @@ export function UploadManagerProvider({ children }: { children: ReactNode }) {
         if (statusResponse.is_complete) {
           // Success: has object and no error
           if (statusResponse.object && !statusResponse.error) {
+            // Backend may return incomplete object, fill in missing fields
+            const completeObject: UploadedObject = {
+              id: statusResponse.object.id,
+              bucket_id: bucketId, // Add bucket_id from context
+              content_type: statusResponse.object.content_type || file.type || "application/octet-stream",
+              origin_name: statusResponse.object.origin_name || file.name,
+              parent_path: path || "", // Add parent_path from upload context
+              created_at: statusResponse.object.created_at || new Date().toISOString(),
+              last_modified: statusResponse.object.last_modified || new Date().toISOString(),
+              size: statusResponse.object.size || file.size,
+              url: statusResponse.object.url || "",
+              file_hash: statusResponse.object.file_hash || statusResponse.file_hash || "",
+            };
+
             updateFileProgress(id, {
               phase: "completed",
               progress: 100,
               message: "Completed"
             });
-            return { success: true, fileId: id, object: statusResponse.object };
+
+            console.log('[UploadManager] Chunked upload completed:', completeObject.origin_name, 'parent_path:', completeObject.parent_path);
+
+            return { success: true, fileId: id, object: completeObject };
           }
           // Failure: has error or explicit FAILED status
           else if (statusResponse.error || statusStr === "FAILED" || statusStr === "500") {

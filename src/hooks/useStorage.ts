@@ -137,8 +137,15 @@ export function useBucketObjects(bucketId: string) {
       // Map files to BucketObject format
       const fileObjects = (response.objects || []).map(mapStorageObject);
 
-      // Combine folders first, then files
-      setObjects([...folderObjects, ...fileObjects]);
+      // Sort files by lastModified (newest first)
+      const sortedFileObjects = fileObjects.sort((a, b) => {
+        const dateA = a.lastModified ? new Date(a.lastModified).getTime() : 0;
+        const dateB = b.lastModified ? new Date(b.lastModified).getTime() : 0;
+        return dateB - dateA; // Descending order (newest first)
+      });
+
+      // Combine folders first, then sorted files
+      setObjects([...folderObjects, ...sortedFileObjects]);
       setFolders(response.folders || []);
       setObjectCount(response.object_count || 0);
       setFolderCount(response.folder_count || 0);
@@ -181,10 +188,12 @@ export function useBucketObjects(bucketId: string) {
           return prev;
         }
 
-        // Add new file to the end (after folders)
+        // Add new file at the BEGINNING of files list (newest first)
         const folders = prev.filter(obj => obj.type === "folder");
         const files = prev.filter(obj => obj.type === "file");
-        return [...folders, ...files, mappedObject];
+
+        // Insert new file at the beginning of files
+        return [...folders, mappedObject, ...files];
       });
 
       // Update count

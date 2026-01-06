@@ -356,6 +356,26 @@ export default function BucketDetailPage() {
     }
   }, [bucketId, fetchObjects]);
 
+  // Track completed files and add them when navigating to their folder
+  useEffect(() => {
+    if (!bucketId) return;
+
+    // When currentPath changes (navigation), check if there are completed files for this path
+    const completedFilesForPath = completedFiles.filter(file =>
+      file.success &&
+      file.object?.bucket_id === bucketId &&
+      file.object.parent_path === currentPath
+    );
+
+    if (completedFilesForPath.length > 0) {
+      completedFilesForPath.forEach(completion => {
+        if (completion.object) {
+          addObject(completion.object);
+        }
+      });
+    }
+  }, [currentPath, bucketId, completedFiles, addObject]);
+
   // Add new objects when uploads complete - without showing loading
   useEffect(() => {
     const currentCount = completedFiles.length;
@@ -368,16 +388,22 @@ export default function BucketDetailPage() {
 
       if (relevantCompletions.length > 0) {
         // Add each new object to the list without fetching
+        // But only if file belongs to current path we're viewing
         relevantCompletions.forEach(completion => {
           if (completion.object) {
-            addObject(completion.object);
+            // Check if this file belongs to current view
+            const fileParentPath = completion.object.parent_path;
+
+            if (fileParentPath === currentPath) {
+              addObject(completion.object);
+            }
           }
         });
         lastCompletedCountRef.current = currentCount;
       }
     }
     lastCompletedCountRef.current = currentCount;
-  }, [completedFiles, bucketId, addObject]);
+  }, [completedFiles, bucketId, currentPath, addObject]);
 
   const handleUploadStarted = (foldersToCreate: string[]) => {
     // Create folders immediately
