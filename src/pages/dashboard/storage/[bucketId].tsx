@@ -14,25 +14,23 @@ import { UploadDialog } from "@/components/storage/UploadDialog";
 import { useUploadManager, UploadingFile, formatBytes } from "@/contexts/UploadManagerContext";
 import { BucketObject } from "@/types";
 import { cn } from "@/lib/utils";
-import { api, getToken } from "@/lib/api";
+import { api } from "@/lib/api";
 import { FileIcon } from "@/components/files/FileIcon";
 import { STORAGE_ENDPOINTS } from "@/lib/config";
 
 interface ObjectRowProps {
   object: BucketObject;
   bucketId: string;
+  bucketName: string;
   onFolderClick: (path: string) => void;
   onDelete: () => void;
   isSelected: boolean;
   onSelectChange: (selected: boolean) => void;
 }
 
-function ObjectRow({ object, bucketId, onFolderClick, onDelete, isSelected, onSelectChange }: ObjectRowProps) {
+function ObjectRow({ object, bucketId, bucketName, onFolderClick, onDelete, isSelected, onSelectChange }: ObjectRowProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [isDownloading, setIsDownloading] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState(0);
-  const [downloadSpeed, setDownloadSpeed] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Close menu when clicking outside
@@ -49,99 +47,39 @@ function ObjectRow({ object, bucketId, onFolderClick, onDelete, isSelected, onSe
     }
   }, [isMenuOpen]);
 
-  const handleDownload = async () => {
+  // Generate CDN URL for file
+  const getCdnUrl = () => {
+    if (object.type !== "file") return "";
+    // object.path contains parent_path, need to combine with file name
+    const fullPath = object.path ? `${object.path}/${object.name}` : object.name;
+    return `https://cdn.gauas.online/${bucketName}/${fullPath}`;
+  };
+
+  const handleDownload = () => {
     if (object.type !== "file") return;
-
     setIsMenuOpen(false);
-    setIsDownloading(true);
-    setDownloadProgress(0);
-    setDownloadSpeed(0);
 
+    // Browser-native download using CDN link
+    const cdnUrl = getCdnUrl();
+    const a = document.createElement("a");
+    a.href = cdnUrl;
+    a.download = object.name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  const handleShareLink = async () => {
+    if (object.type !== "file") return;
+    setIsMenuOpen(false);
+
+    const cdnUrl = getCdnUrl();
     try {
-      const token = getToken();
-      if (!token) {
-        alert("No authentication token found. Please login again.");
-        setIsDownloading(false);
-        return;
-      }
-
-      // Direct download from backend API
-      const downloadUrl = STORAGE_ENDPOINTS.downloadObject(bucketId, object.id);
-
-      const response = await fetch(downloadUrl, {
-        method: "GET",
-        headers: {
-          "Authorization": `Bearer ${token}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to download file");
-      }
-
-      // Get total size from Content-Length header
-      const contentLength = response.headers.get("Content-Length");
-      const totalBytes = contentLength ? parseInt(contentLength, 10) : 0;
-
-      // Read response as stream to track progress
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error("Response body is not readable");
-      }
-
-      const chunks: Uint8Array[] = [];
-      let receivedBytes = 0;
-      let lastTime = Date.now();
-      let lastBytes = 0;
-
-      while (true) {
-        const { done, value } = await reader.read();
-
-        if (done) break;
-
-        chunks.push(value);
-        receivedBytes += value.length;
-
-        // Calculate speed every chunk
-        const currentTime = Date.now();
-        const timeDiff = (currentTime - lastTime) / 1000; // seconds
-
-        if (timeDiff >= 0.1) { // Update every 100ms
-          const bytesDiff = receivedBytes - lastBytes;
-          const speed = bytesDiff / timeDiff; // bytes per second
-          setDownloadSpeed(speed);
-          lastTime = currentTime;
-          lastBytes = receivedBytes;
-        }
-
-        // Update progress
-        if (totalBytes > 0) {
-          const progress = Math.round((receivedBytes / totalBytes) * 100);
-          setDownloadProgress(progress);
-        }
-      }
-
-      // Combine chunks into a single blob
-      const blob = new Blob(chunks as BlobPart[]);
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = object.name;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-
-      setDownloadProgress(100);
-    } catch (error) {
-      alert(error instanceof Error ? error.message : "Failed to download file");
-    } finally {
-      // Reset after a short delay to show completion
-      setTimeout(() => {
-        setIsDownloading(false);
-        setDownloadProgress(0);
-        setDownloadSpeed(0);
-      }, 1000);
+      await navigator.clipboard.writeText(cdnUrl);
+      // Show a brief success indicator (you could replace this with a toast notification)
+      alert("Link copied to clipboard!");
+    } catch {
+      alert("Failed to copy link to clipboard");
     }
   };
 
@@ -181,40 +119,9 @@ function ObjectRow({ object, bucketId, onFolderClick, onDelete, isSelected, onSe
       className={cn(
         "flex items-center gap-2 rounded-md px-4 py-2 hover:bg-muted/50 group relative",
         object.type === "folder" && "cursor-pointer",
-        (isDeleting || isDownloading) && "opacity-50 pointer-events-none"
+        isDeleting && "opacity-50 pointer-events-none"
       )}
     >
-      {/* Download Progress Overlay */}
-      {isDownloading && (
-        <div className="absolute inset-0 bg-blue-500/10 rounded-md overflow-hidden">
-          <div
-            className="h-full bg-blue-500/20 transition-all duration-300"
-            style={{ width: `${downloadProgress}%` }}
-          />
-          <div className="absolute inset-0 flex items-center justify-center gap-2">
-            <div className="animate-bounce">
-              <svg
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                className="text-blue-600 dark:text-blue-400"
-              >
-                <path
-                  d="M12 4V20M12 20L6 14M12 20L18 14"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </div>
-            <span className="text-sm font-medium text-blue-600 dark:text-blue-400 bg-background/90 px-3 py-1.5 rounded shadow-sm">
-              {formatBytes(downloadSpeed)}/s • {downloadProgress}%
-            </span>
-          </div>
-        </div>
-      )}
 
       {/* Checkbox */}
       <input
@@ -277,21 +184,43 @@ function ObjectRow({ object, bucketId, onFolderClick, onDelete, isSelected, onSe
 
         {/* Dropdown Menu */}
         {isMenuOpen && (
-          <div className="absolute right-0 top-full mt-1 w-40 bg-background border rounded-md shadow-lg z-10">
+          <div className="absolute right-0 top-full mt-1 w-48 bg-background border rounded-md shadow-lg z-10">
             {object.type === "file" && (
-              <button
-                onClick={handleDownload}
-                className="w-full px-4 py-2 text-left text-sm hover:bg-muted flex items-center gap-2"
-                disabled={isDownloading}
-              >
-                <span>{isDownloading ? "Downloading..." : "Download"}</span>
-              </button>
+              <>
+                <button
+                  onClick={handleDownload}
+                  className="w-full px-4 py-2 text-left text-sm hover:bg-muted flex items-center gap-2"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                  <span>Download</span>
+                </button>
+                <button
+                  onClick={handleShareLink}
+                  className="w-full px-4 py-2 text-left text-sm hover:bg-muted flex items-center gap-2"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                  </svg>
+                  <span>Share Link</span>
+                </button>
+              </>
             )}
             <button
               onClick={handleDelete}
               className="w-full px-4 py-2 text-left text-sm hover:bg-muted flex items-center gap-2 text-red-600 dark:text-red-400"
               disabled={isDeleting}
             >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                <line x1="10" y1="11" x2="10" y2="17" />
+                <line x1="14" y1="11" x2="14" y2="17" />
+              </svg>
               <span>{isDeleting ? "Deleting..." : "Delete"}</span>
             </button>
           </div>
@@ -756,6 +685,7 @@ export default function BucketDetailPage() {
                         key={object.id}
                         object={object}
                         bucketId={bucketId}
+                        bucketName={bucketName}
                         onFolderClick={navigateToFolder}
                         onDelete={fetchObjects}
                         isSelected={selectedItems.has(object.id)}
