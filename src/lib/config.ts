@@ -22,6 +22,9 @@ export const STORAGE_ENDPOINTS = {
     const base = `/api/storage/buckets/${id}/objects`;
     return path ? `${base}?path=${encodeURIComponent(path)}` : base;
   },
+  deleteObject: (bucketId: string, objectId: string) => `/api/storage/buckets/${bucketId}/objects/${objectId}`,
+  deletePath: (bucketId: string, path: string) => `/api/storage/buckets/${bucketId}/objects/path/${path}`,
+  downloadObject: (bucketId: string, objectId: string) => `${BACKEND_API_URL}/api/v1/cloud/buckets/${bucketId}/download/${objectId}`,
 } as const;
 
 // IAM endpoints (server-side proxy)

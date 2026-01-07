@@ -14,19 +14,25 @@ import { UploadDialog } from "@/components/storage/UploadDialog";
 import { useUploadManager, UploadingFile, formatBytes } from "@/contexts/UploadManagerContext";
 import { BucketObject } from "@/types";
 import { cn } from "@/lib/utils";
-import { api } from "@/lib/api";
+import { api, getToken } from "@/lib/api";
 import { FileIcon } from "@/components/files/FileIcon";
+import { STORAGE_ENDPOINTS } from "@/lib/config";
 
 interface ObjectRowProps {
   object: BucketObject;
   bucketId: string;
   onFolderClick: (path: string) => void;
   onDelete: () => void;
+  isSelected: boolean;
+  onSelectChange: (selected: boolean) => void;
 }
 
-function ObjectRow({ object, bucketId, onFolderClick, onDelete }: ObjectRowProps) {
+function ObjectRow({ object, bucketId, onFolderClick, onDelete, isSelected, onSelectChange }: ObjectRowProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [downloadSpeed, setDownloadSpeed] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Close menu when clicking outside
@@ -43,14 +49,105 @@ function ObjectRow({ object, bucketId, onFolderClick, onDelete }: ObjectRowProps
     }
   }, [isMenuOpen]);
 
-  const handleDownload = () => {
-    // TODO: Implement download functionality
-    console.log("Download file:", object.name);
+  const handleDownload = async () => {
+    if (object.type !== "file") return;
+
     setIsMenuOpen(false);
+    setIsDownloading(true);
+    setDownloadProgress(0);
+    setDownloadSpeed(0);
+
+    try {
+      const token = getToken();
+      if (!token) {
+        alert("No authentication token found. Please login again.");
+        setIsDownloading(false);
+        return;
+      }
+
+      // Direct download from backend API
+      const downloadUrl = STORAGE_ENDPOINTS.downloadObject(bucketId, object.id);
+
+      const response = await fetch(downloadUrl, {
+        method: "GET",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to download file");
+      }
+
+      // Get total size from Content-Length header
+      const contentLength = response.headers.get("Content-Length");
+      const totalBytes = contentLength ? parseInt(contentLength, 10) : 0;
+
+      // Read response as stream to track progress
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error("Response body is not readable");
+      }
+
+      const chunks: Uint8Array[] = [];
+      let receivedBytes = 0;
+      let lastTime = Date.now();
+      let lastBytes = 0;
+
+      while (true) {
+        const { done, value } = await reader.read();
+
+        if (done) break;
+
+        chunks.push(value);
+        receivedBytes += value.length;
+
+        // Calculate speed every chunk
+        const currentTime = Date.now();
+        const timeDiff = (currentTime - lastTime) / 1000; // seconds
+
+        if (timeDiff >= 0.1) { // Update every 100ms
+          const bytesDiff = receivedBytes - lastBytes;
+          const speed = bytesDiff / timeDiff; // bytes per second
+          setDownloadSpeed(speed);
+          lastTime = currentTime;
+          lastBytes = receivedBytes;
+        }
+
+        // Update progress
+        if (totalBytes > 0) {
+          const progress = Math.round((receivedBytes / totalBytes) * 100);
+          setDownloadProgress(progress);
+        }
+      }
+
+      // Combine chunks into a single blob
+      const blob = new Blob(chunks as BlobPart[]);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = object.name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+
+      setDownloadProgress(100);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Failed to download file");
+    } finally {
+      // Reset after a short delay to show completion
+      setTimeout(() => {
+        setIsDownloading(false);
+        setDownloadProgress(0);
+        setDownloadSpeed(0);
+      }, 1000);
+    }
   };
 
   const handleDelete = async () => {
-    if (!confirm(`Are you sure you want to delete "${object.name}"?`)) {
+    const itemType = object.type === "folder" ? "folder" : "file";
+    if (!confirm(`Are you sure you want to delete this ${itemType} "${object.name}"?`)) {
       return;
     }
 
@@ -58,14 +155,21 @@ function ObjectRow({ object, bucketId, onFolderClick, onDelete }: ObjectRowProps
     setIsMenuOpen(false);
 
     try {
-      await api.delete(`/api/storage/buckets/${bucketId}/objects/${object.id}`);
+      if (object.type === "folder") {
+        // Delete folder via path endpoint
+        await api.delete(STORAGE_ENDPOINTS.deletePath(bucketId, object.path));
+      } else {
+        // Delete file via object endpoint
+        await api.delete(STORAGE_ENDPOINTS.deleteObject(bucketId, object.id));
+      }
       onDelete();
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Failed to delete file");
+      alert(error instanceof Error ? error.message : `Failed to delete ${itemType}`);
     } finally {
       setIsDeleting(false);
     }
   };
+
   const handleClick = () => {
     if (object.type === "folder") {
       onFolderClick(object.path);
@@ -77,9 +181,53 @@ function ObjectRow({ object, bucketId, onFolderClick, onDelete }: ObjectRowProps
       className={cn(
         "flex items-center gap-2 rounded-md px-4 py-2 hover:bg-muted/50 group relative",
         object.type === "folder" && "cursor-pointer",
-        isDeleting && "opacity-50 pointer-events-none"
+        (isDeleting || isDownloading) && "opacity-50 pointer-events-none"
       )}
     >
+      {/* Download Progress Overlay */}
+      {isDownloading && (
+        <div className="absolute inset-0 bg-blue-500/10 rounded-md overflow-hidden">
+          <div
+            className="h-full bg-blue-500/20 transition-all duration-300"
+            style={{ width: `${downloadProgress}%` }}
+          />
+          <div className="absolute inset-0 flex items-center justify-center gap-2">
+            <div className="animate-bounce">
+              <svg
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                className="text-blue-600 dark:text-blue-400"
+              >
+                <path
+                  d="M12 4V20M12 20L6 14M12 20L18 14"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
+            <span className="text-sm font-medium text-blue-600 dark:text-blue-400 bg-background/90 px-3 py-1.5 rounded shadow-sm">
+              {formatBytes(downloadSpeed)}/s • {downloadProgress}%
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Checkbox */}
+      <input
+        type="checkbox"
+        checked={isSelected}
+        onChange={(e) => {
+          e.stopPropagation();
+          onSelectChange(e.target.checked);
+        }}
+        className="w-4 h-4 shrink-0 cursor-pointer"
+        onClick={(e) => e.stopPropagation()}
+      />
+
       <div
         className="flex items-center gap-2 flex-1 min-w-0"
         onClick={handleClick}
@@ -114,43 +262,41 @@ function ObjectRow({ object, bucketId, onFolderClick, onDelete }: ObjectRowProps
         </span>
       </div>
 
-      {/* Action Menu - Only show for files */}
-      {object.type === "file" && (
-        <div className="relative shrink-0" ref={menuRef}>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setIsMenuOpen(!isMenuOpen);
-            }}
-            className="w-8 h-8 flex items-center justify-center rounded hover:bg-muted opacity-0 group-hover:opacity-100 transition-opacity"
-            disabled={isDeleting}
-          >
-            <span className="text-muted-foreground">⋮</span>
-          </button>
+      {/* Action Menu */}
+      <div className="relative shrink-0" ref={menuRef}>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsMenuOpen(!isMenuOpen);
+          }}
+          className="w-8 h-8 flex items-center justify-center rounded hover:bg-muted opacity-0 group-hover:opacity-100 transition-opacity"
+          disabled={isDeleting}
+        >
+          <span className="text-muted-foreground">⋮</span>
+        </button>
 
-          {/* Dropdown Menu */}
-          {isMenuOpen && (
-            <div className="absolute right-0 top-full mt-1 w-40 bg-background border rounded-md shadow-lg z-10">
+        {/* Dropdown Menu */}
+        {isMenuOpen && (
+          <div className="absolute right-0 top-full mt-1 w-40 bg-background border rounded-md shadow-lg z-10">
+            {object.type === "file" && (
               <button
                 onClick={handleDownload}
                 className="w-full px-4 py-2 text-left text-sm hover:bg-muted flex items-center gap-2"
+                disabled={isDownloading}
               >
-                <span>Download</span>
+                <span>{isDownloading ? "Downloading..." : "Download"}</span>
               </button>
-              <button
-                onClick={handleDelete}
-                className="w-full px-4 py-2 text-left text-sm hover:bg-muted flex items-center gap-2 text-red-600 dark:text-red-400"
-                disabled={isDeleting}
-              >
-                <span>{isDeleting ? "Deleting..." : "Delete"}</span>
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Empty space if folder */}
-      {object.type === "folder" && <span className="w-8 shrink-0"></span>}
+            )}
+            <button
+              onClick={handleDelete}
+              className="w-full px-4 py-2 text-left text-sm hover:bg-muted flex items-center gap-2 text-red-600 dark:text-red-400"
+              disabled={isDeleting}
+            >
+              <span>{isDeleting ? "Deleting..." : "Delete"}</span>
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -198,6 +344,9 @@ function UploadingRow({ uploadFile, onCancel }: UploadingRowProps) {
 
   return (
     <div className="flex items-center gap-2 rounded-md px-4 py-2 bg-muted/30 opacity-80">
+      {/* Checkbox placeholder for alignment */}
+      <span className="w-4 h-4 shrink-0"></span>
+
       <div className={cn("shrink-0", isActive && "animate-pulse")}>
         <FileIcon type="file" name={uploadFile.file.name} className="w-6 h-6" />
       </div>
@@ -274,6 +423,8 @@ export default function BucketDetailPage() {
   const { bucketId } = router.query as { bucketId: string };
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
   const lastCompletedCountRef = useRef(0);
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Get bucket info from list
   const { buckets, fetchBuckets } = useBuckets();
@@ -293,6 +444,8 @@ export default function BucketDetailPage() {
     navigateToRoot,
     addObject,
     addFolder,
+    deleteObject,
+    deletePath,
   } = useBucketObjects(bucketId);
 
   const { getUploadingFilesForBucket, cancelUpload, completedFiles, uploadingFiles: allUploadingFiles } = useUploadManager();
@@ -302,6 +455,55 @@ export default function BucketDetailPage() {
 
   // Track which folders we've already created for uploads
   const createdFoldersRef = useRef<Set<string>>(new Set());
+
+  // Handle bulk delete
+  const handleBulkDelete = async () => {
+    if (selectedItems.size === 0) return;
+
+    const itemCount = selectedItems.size;
+    if (!confirm(`Are you sure you want to delete ${itemCount} item(s)?`)) {
+      return;
+    }
+
+    setIsDeleting(true);
+
+    try {
+      // Separate files and folders
+      const selectedObjects = objects.filter(obj => selectedItems.has(obj.id));
+      const deletePromises = selectedObjects.map(obj => {
+        if (obj.type === "folder") {
+          return deletePath(obj.path);
+        } else {
+          return deleteObject(obj.id);
+        }
+      });
+
+      // Execute all deletes in parallel
+      await Promise.all(deletePromises);
+
+      // Clear selection and refresh
+      setSelectedItems(new Set());
+      await fetchObjects();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Failed to delete items");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // Toggle select all
+  const handleToggleSelectAll = () => {
+    if (selectedItems.size === objects.length) {
+      setSelectedItems(new Set());
+    } else {
+      setSelectedItems(new Set(objects.map(obj => obj.id)));
+    }
+  };
+
+  // Clear selection when navigating
+  useEffect(() => {
+    setSelectedItems(new Set());
+  }, [currentPath]);
 
   // Auto-create folder entries when files are being uploaded to new folders
   useEffect(() => {
@@ -477,6 +679,16 @@ export default function BucketDetailPage() {
               </p>
             </div>
             <div className="flex gap-2">
+              {selectedItems.size > 0 && (
+                <Button
+                  variant="outline"
+                  onClick={handleBulkDelete}
+                  disabled={isDeleting}
+                  className="text-red-600 dark:text-red-400 border-red-600 dark:border-red-400 hover:bg-red-50 dark:hover:bg-red-950"
+                >
+                  {isDeleting ? "Deleting..." : `Delete Selected (${selectedItems.size})`}
+                </Button>
+              )}
               {currentPath && (
                 <Button variant="outline" onClick={navigateUp}>
                   ← Back
@@ -517,7 +729,13 @@ export default function BucketDetailPage() {
               ) : (
                 <div className="rounded-lg border">
                   <div className="flex items-center gap-2 border-b bg-muted/50 px-4 py-2 text-xs font-medium text-muted-foreground">
-                    <span className="w-6"></span>
+                    <input
+                      type="checkbox"
+                      checked={objects.length > 0 && selectedItems.size === objects.length}
+                      onChange={handleToggleSelectAll}
+                      className="w-4 h-4 cursor-pointer"
+                      title="Select all"
+                    />
                     <span className="flex-1">Name</span>
                     <span className="w-24 text-right">Size</span>
                     <span className="w-32 text-right">Modified</span>
@@ -540,6 +758,16 @@ export default function BucketDetailPage() {
                         bucketId={bucketId}
                         onFolderClick={navigateToFolder}
                         onDelete={fetchObjects}
+                        isSelected={selectedItems.has(object.id)}
+                        onSelectChange={(selected) => {
+                          const newSelection = new Set(selectedItems);
+                          if (selected) {
+                            newSelection.add(object.id);
+                          } else {
+                            newSelection.delete(object.id);
+                          }
+                          setSelectedItems(newSelection);
+                        }}
                       />
                     ))}
                   </div>

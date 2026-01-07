@@ -9,7 +9,28 @@ const DEFAULT_PREFERRED_CHUNK_SIZE = 10 * 1024 * 1024; // 10MB preferred chunk s
 const MAX_RETRY_ATTEMPTS = 3;
 const POLL_INTERVAL = 3000; // 3 seconds (reduced from 5s for faster feedback)
 const MAX_POLL_ATTEMPTS = 200; // ~10 minutes max polling
-const PARALLEL_CHUNK_LIMIT = 5; // Upload 5 chunks in parallel (increased from 4)
+
+// Get parallel chunk limit based on time of day
+// 7h-19h30: 5 chunks in parallel (peak hours)
+// Outside peak hours: 2 chunks in parallel (off-peak hours)
+function getParallelChunkLimit(): number {
+  const now = new Date();
+  const hours = now.getHours();
+  const minutes = now.getMinutes();
+
+  // Convert current time to minutes since midnight
+  const currentMinutes = hours * 60 + minutes;
+
+  // Peak hours: 7:00 AM (420 minutes) to 7:30 PM (1170 minutes)
+  const peakStart = 7 * 60; // 7:00 AM
+  const peakEnd = 19 * 60 + 30; // 7:30 PM
+
+  if (currentMinutes >= peakStart && currentMinutes <= peakEnd) {
+    return 5; // Peak hours
+  }
+
+  return 2; // Off-peak hours
+}
 
 // =====================================
 // Types
@@ -343,6 +364,9 @@ async function chunkedUpload(
       }
       return { success: false, size: 0 };
     };
+
+    // Get dynamic parallel chunk limit based on time of day
+    const PARALLEL_CHUNK_LIMIT = getParallelChunkLimit();
 
     // Process chunks in batches of PARALLEL_CHUNK_LIMIT
     for (let i = 0; i < chunkIndices.length; i += PARALLEL_CHUNK_LIMIT) {

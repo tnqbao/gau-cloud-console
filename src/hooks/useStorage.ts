@@ -227,6 +227,19 @@ export function useBucketObjects(bucketId: string) {
     setFolderCount(prev => prev + 1);
   }, [currentPath]);
 
+  const deleteObject = async (objectId: string) => {
+    await api.delete(STORAGE_ENDPOINTS.deleteObject(bucketId, objectId));
+    setObjects(prev => prev.filter(obj => obj.id !== objectId));
+    setObjectCount(prev => prev - 1);
+  };
+
+  const deletePath = async (path: string) => {
+    await api.delete(STORAGE_ENDPOINTS.deletePath(bucketId, path));
+    // Remove the folder and all its contents
+    setObjects(prev => prev.filter(obj => obj.path !== path));
+    setFolderCount(prev => prev - 1);
+  };
+
   return {
     objects,
     folders,
@@ -241,5 +254,7 @@ export function useBucketObjects(bucketId: string) {
     navigateToRoot,
     addObject,
     addFolder,
+    deleteObject,
+    deletePath,
   };
 }
