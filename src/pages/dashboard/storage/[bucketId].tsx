@@ -623,6 +623,11 @@ export default function BucketDetailPage() {
                   ← Back
                 </Button>
               )}
+              <Link href="/dashboard/document/object-storage" target="_blank">
+                <Button variant="outline">
+                  API Document
+                </Button>
+              </Link>
               <Button variant="outline" onClick={() => setIsUploadDialogOpen(true)}>
                 Upload File
               </Button>
