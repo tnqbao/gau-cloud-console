@@ -27,30 +27,30 @@ export default function HomePage() {
   return (
     <>
       <Head>
-        <title>Home Cloud - Your Personal Cloud Platform</title>
+        <title>Gauas Cloud - Open Source Cloud Platform</title>
         <meta
           name="description"
-          content="Home Cloud Orchestrator - A self-hosted AWS-like cloud platform for your home infrastructure"
+          content="Gauas Cloud - An open source, self-hosted cloud platform for your infrastructure. S3-compatible storage, IAM, and more."
         />
       </Head>
 
       <PublicLayout>
-        <section className="py-20 md:py-32">
-          <div className="mx-auto max-w-7xl px-6 text-center">
-            <h1 className="text-4xl font-bold tracking-tight md:text-6xl">
-              Your Personal Cloud
-              <span className="block text-primary">Infrastructure</span>
+        <section className="py-12 sm:py-16 md:py-24 lg:py-32">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 text-center">
+            <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight">
+              Open Source Cloud
+              <span className="block text-primary">Platform</span>
             </h1>
-            <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground">
-              Deploy and manage cloud services at home. Object storage, IAM, message queues,
-              and more — all with an AWS-like experience.
+            <p className="mx-auto mt-4 sm:mt-6 max-w-2xl text-base sm:text-lg text-muted-foreground px-2">
+              Self-hosted, open source cloud infrastructure. Object storage, IAM, message queues,
+              and more — built for developers who value control and transparency.
             </p>
-            <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
-              <Link href="/register">
-                <Button size="lg">Get Started Free</Button>
+            <div className="mt-8 sm:mt-10 flex flex-col items-center justify-center gap-3 sm:gap-4 sm:flex-row">
+              <Link href="/register" className="w-full sm:w-auto">
+                <Button size="lg" className="w-full sm:w-auto">Get Started Free</Button>
               </Link>
-              <Link href="/login">
-                <Button variant="outline" size="lg">
+              <Link href="/login" className="w-full sm:w-auto">
+                <Button variant="outline" size="lg" className="w-full sm:w-auto">
                   Sign In
                 </Button>
               </Link>
@@ -58,23 +58,23 @@ export default function HomePage() {
           </div>
         </section>
 
-        <section className="border-t py-20">
-          <div className="mx-auto max-w-7xl px-6">
+        <section className="border-t py-12 sm:py-16 md:py-20">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6">
             <div className="text-center">
-              <h2 className="text-3xl font-bold">Cloud Services</h2>
-              <p className="mt-4 text-muted-foreground">
+              <h2 className="text-2xl sm:text-3xl font-bold">Cloud Services</h2>
+              <p className="mt-3 sm:mt-4 text-sm sm:text-base text-muted-foreground">
                 Everything you need to build and run your applications
               </p>
             </div>
 
-            <div className="mt-12 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+            <div className="mt-8 sm:mt-12 grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
               {features.map((feature) => (
                 <Card key={feature.title}>
-                  <CardHeader>
-                    <CardTitle className="text-lg">{feature.title}</CardTitle>
+                  <CardHeader className="pb-2 sm:pb-4">
+                    <CardTitle className="text-base sm:text-lg">{feature.title}</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="text-xs sm:text-sm text-muted-foreground">
                       {feature.description}
                     </p>
                   </CardContent>
@@ -84,15 +84,15 @@ export default function HomePage() {
           </div>
         </section>
 
-        <section className="border-t py-20">
-          <div className="mx-auto max-w-7xl px-6 text-center">
-            <h2 className="text-3xl font-bold">Ready to get started?</h2>
-            <p className="mt-4 text-muted-foreground">
+        <section className="border-t py-12 sm:py-16 md:py-20">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 text-center">
+            <h2 className="text-2xl sm:text-3xl font-bold">Ready to get started?</h2>
+            <p className="mt-3 sm:mt-4 text-sm sm:text-base text-muted-foreground">
               Create your account and start deploying cloud services in minutes.
             </p>
-            <div className="mt-8">
-              <Link href="/register">
-                <Button size="lg">Create Free Account</Button>
+            <div className="mt-6 sm:mt-8">
+              <Link href="/register" className="w-full sm:w-auto inline-block">
+                <Button size="lg" className="w-full sm:w-auto">Create Free Account</Button>
               </Link>
             </div>
           </div>

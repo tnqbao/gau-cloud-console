@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { User, LoginRequest, RegisterRequest } from "@/types";
-import { api, setToken, removeToken, getToken } from "@/lib/api";
+import { api, setToken, removeToken, getToken, setRefreshToken, removeRefreshToken, getRefreshToken } from "@/lib/api";
 import { AUTH_ENDPOINTS } from "@/lib/config";
 import { useRouter } from "next/router";
 
@@ -68,8 +68,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const response = await api.post<LoginResponse>(AUTH_ENDPOINTS.login, data, {
       skipAuth: true,
     });
-    // Backend returns access_token, not token
+    // Save access_token and refresh_token
     setToken(response.access_token);
+    if (response.refresh_token) {
+      setRefreshToken(response.refresh_token);
+    }
     // Fetch user profile after login
     await refreshProfile();
     router.push("/dashboard");
@@ -79,8 +82,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const response = await api.post<LoginResponse>(AUTH_ENDPOINTS.register, data, {
       skipAuth: true,
     });
-    // Backend returns access_token, not token
+    // Save access_token and refresh_token
     setToken(response.access_token);
+    if (response.refresh_token) {
+      setRefreshToken(response.refresh_token);
+    }
     // Fetch user profile after register
     await refreshProfile();
     router.push("/dashboard");
@@ -90,8 +96,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const response = await api.post<LoginResponse>(AUTH_ENDPOINTS.googleSSO, { token }, {
       skipAuth: true,
     });
-    // Backend returns access_token
+    // Save access_token and refresh_token
     setToken(response.access_token);
+    if (response.refresh_token) {
+      setRefreshToken(response.refresh_token);
+    }
     // Fetch user profile after Google login
     await refreshProfile();
     router.push("/dashboard");
@@ -99,11 +108,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     try {
-      await api.post(AUTH_ENDPOINTS.logout);
+      const refreshToken = getRefreshToken();
+      const headers: Record<string, string> = {};
+
+      if (refreshToken) {
+        headers["X-Refresh-Token"] = refreshToken;
+      }
+
+      await api.post(AUTH_ENDPOINTS.logout, undefined, {
+        headers,
+      });
     } catch {
       // Ignore logout errors
     } finally {
       removeToken();
+      removeRefreshToken();
       setUser(null);
       router.push("/login");
     }

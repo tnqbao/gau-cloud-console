@@ -4,7 +4,7 @@ import { getDeviceId } from "@/lib/device";
 import { BACKEND_API_URL } from "@/lib/config";
 
 // Upload thresholds and constants
-export const UPLOAD_THRESHOLD = 30 * 1024 * 1024; // 30MB - threshold for chunked upload
+export const UPLOAD_THRESHOLD = 50 * 1024 * 1024; // 50MB - threshold for chunked upload
 const DEFAULT_PREFERRED_CHUNK_SIZE = 10 * 1024 * 1024; // 10MB preferred chunk size
 const MAX_RETRY_ATTEMPTS = 3;
 const POLL_INTERVAL = 3000; // 3 seconds (reduced from 5s for faster feedback)

@@ -18,27 +18,44 @@ export default async function handler(
     return res.status(400).json({ message: "Bucket ID is required" });
   }
 
-  if (req.method !== "PUT") {
-    return res.status(405).json({ message: "Method not allowed" });
-  }
-
   try {
-    const response = await fetch(`${API_URL}/api/v1/cloud/buckets/${id}/access`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: authHeader,
-      },
-      body: JSON.stringify(req.body),
-    });
+    if (req.method === "GET") {
+      const response = await fetch(`${API_URL}/api/v1/cloud/buckets/${id}/access`, {
+        method: "GET",
+        headers: {
+          Authorization: authHeader,
+        },
+      });
 
-    try {
-      const data = await safeJsonParse(response);
-      return res.status(response.status).json(data || { message: "Success" });
-    } catch (parseError: unknown) {
-      const message = parseError instanceof Error ? parseError.message : "Failed to parse response";
-      return res.status(500).json({ message });
+      try {
+        const data = await safeJsonParse(response);
+        return res.status(response.status).json(data || { access: "private" });
+      } catch (parseError: unknown) {
+        const message = parseError instanceof Error ? parseError.message : "Failed to parse response";
+        return res.status(500).json({ message });
+      }
     }
+
+    if (req.method === "PUT") {
+      const response = await fetch(`${API_URL}/api/v1/cloud/buckets/${id}/access`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: authHeader,
+        },
+        body: JSON.stringify(req.body),
+      });
+
+      try {
+        const data = await safeJsonParse(response);
+        return res.status(response.status).json(data || { message: "Success" });
+      } catch (parseError: unknown) {
+        const message = parseError instanceof Error ? parseError.message : "Failed to parse response";
+        return res.status(500).json({ message });
+      }
+    }
+
+    return res.status(405).json({ message: "Method not allowed" });
   } catch (error) {
     console.error("Bucket access error:", error);
     return res.status(500).json({ message: "Internal server error" });
