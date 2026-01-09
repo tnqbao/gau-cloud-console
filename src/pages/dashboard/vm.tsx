@@ -7,7 +7,7 @@ export default function VMPage() {
   return (
     <AuthGuard>
       <Head>
-        <title>Virtual Machines - Home Cloud</title>
+        <title>Virtual Machines - Gauas Cloud</title>
       </Head>
 
       <DashboardLayout>

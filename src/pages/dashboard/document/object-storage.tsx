@@ -161,15 +161,15 @@ export default function ObjectStorageDocPage() {
   return (
     <AuthGuard>
       <Head>
-        <title>Object Storage API Documentation - Home Cloud</title>
+        <title>Object Storage API Documentation - Gauas Cloud</title>
       </Head>
 
       <DashboardLayout>
-        <div className="max-w-5xl mx-auto space-y-8 py-8">
+        <div className="max-w-5xl mx-auto space-y-6 sm:space-y-8 py-4 sm:py-8">
           {/* Header */}
           <div>
-            <h1 className="text-3xl font-bold mb-2">Object Storage API Documentation</h1>
-            <p className="text-muted-foreground">
+            <h1 className="text-2xl sm:text-3xl font-bold mb-2">Object Storage API Documentation</h1>
+            <p className="text-sm sm:text-base text-muted-foreground">
               Complete guide for managing files and folders in Object Storage using our API
             </p>
           </div>
@@ -627,8 +627,8 @@ X-Timestamp: 1736416263`}
               </div>
 
               {/* Warning */}
-              <div className="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-md p-4">
-                <p className="text-sm font-semibold mb-1">Warning</p>
+              <div className="border-l-4 border-red-500 dark:border-red-400 bg-card rounded-md p-4">
+                <p className="text-sm font-semibold mb-1 text-red-600 dark:text-red-400">Warning</p>
                 <p className="text-sm">
                   Deleting a folder will delete all files and subfolders inside it. This action cannot be undone.
                 </p>
