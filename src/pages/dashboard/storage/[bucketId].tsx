@@ -38,12 +38,41 @@ interface ObjectRowProps {
 function ObjectRow({ object, bucketId, bucketName, onFolderClick, onDelete, isSelected, onSelectChange, onShowToast }: ObjectRowProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [menuPosition, setMenuPosition] = useState<{ top: number; right: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  // Calculate menu position when opened
+  useEffect(() => {
+    if (isMenuOpen && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      const windowHeight = window.innerHeight;
+      const menuHeight = 200; // Approximate menu height
+
+      // Check if there's enough space below
+      const spaceBelow = windowHeight - rect.bottom;
+
+      if (spaceBelow < menuHeight) {
+        // Not enough space below, position above
+        setMenuPosition({
+          top: rect.top - menuHeight,
+          right: window.innerWidth - rect.right,
+        });
+      } else {
+        // Enough space below, position normally
+        setMenuPosition({
+          top: rect.bottom + 4,
+          right: window.innerWidth - rect.right,
+        });
+      }
+    }
+  }, [isMenuOpen]);
 
   // Close menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node) &&
+          buttonRef.current && !buttonRef.current.contains(event.target as Node)) {
         setIsMenuOpen(false);
       }
     };
@@ -66,10 +95,11 @@ function ObjectRow({ object, bucketId, bucketName, onFolderClick, onDelete, isSe
     if (object.type !== "file") return;
     setIsMenuOpen(false);
 
-    // Browser-native download using CDN link
+    // Browser-native download using CDN link with download mode
     const cdnUrl = getCdnUrl();
+    const downloadUrl = `${cdnUrl}?mode=download`;
     const a = document.createElement("a");
-    a.href = cdnUrl;
+    a.href = downloadUrl;
     a.download = object.name;
     document.body.appendChild(a);
     a.click();
@@ -123,7 +153,7 @@ function ObjectRow({ object, bucketId, bucketName, onFolderClick, onDelete, isSe
   return (
     <div
       className={cn(
-        "flex items-center gap-2 rounded-md px-4 py-2 hover:bg-muted/50 group relative",
+        "flex items-center gap-2 rounded-md px-3 sm:px-4 py-2 hover:bg-muted/50 group relative",
         object.type === "folder" && "cursor-pointer",
         isDeleting && "opacity-50 pointer-events-none"
       )}
@@ -149,26 +179,26 @@ function ObjectRow({ object, bucketId, bucketName, onFolderClick, onDelete, isSe
         <FileIcon
           type={object.type}
           name={object.name}
-          className="shrink-0 w-6 h-6"
+          className="shrink-0 w-5 h-5 sm:w-6 sm:h-6"
         />
 
         {/* Name */}
         <span
           className={cn(
-            "flex-1 text-sm truncate",
+            "flex-1 text-xs sm:text-sm truncate",
             object.type === "folder" && "font-medium text-blue-600 dark:text-blue-400"
           )}
         >
           {object.name}
         </span>
 
-        {/* Size */}
-        <span className="w-24 text-right text-xs text-muted-foreground shrink-0">
+        {/* Size - hidden on mobile */}
+        <span className="w-16 sm:w-24 text-right text-xs text-muted-foreground shrink-0 hidden sm:block">
           {object.type === "file" ? formatBytes(object.size) : "—"}
         </span>
 
-        {/* Modified */}
-        <span className="w-32 text-right text-xs text-muted-foreground shrink-0">
+        {/* Modified - hidden on mobile and tablet */}
+        <span className="w-24 sm:w-32 text-right text-xs text-muted-foreground shrink-0 hidden md:block">
           {object.lastModified
             ? new Date(object.lastModified).toLocaleDateString()
             : "—"}
@@ -176,21 +206,35 @@ function ObjectRow({ object, bucketId, bucketName, onFolderClick, onDelete, isSe
       </div>
 
       {/* Action Menu */}
-      <div className="relative shrink-0" ref={menuRef}>
+      <div className="relative shrink-0">
         <button
+          ref={buttonRef}
           onClick={(e) => {
             e.stopPropagation();
             setIsMenuOpen(!isMenuOpen);
           }}
-          className="w-8 h-8 flex items-center justify-center rounded hover:bg-muted opacity-0 group-hover:opacity-100 transition-opacity"
+          className={cn(
+            "w-8 h-8 flex items-center justify-center rounded transition-all",
+            "opacity-40 sm:opacity-0 hover:opacity-100 group-hover:opacity-100",
+            "hover:bg-muted active:bg-muted",
+            isMenuOpen && "opacity-100 bg-muted"
+          )}
           disabled={isDeleting}
+          title="Actions"
         >
-          <span className="text-muted-foreground">⋮</span>
+          <span className="text-foreground font-bold text-lg">⋮</span>
         </button>
 
-        {/* Dropdown Menu */}
-        {isMenuOpen && (
-          <div className="absolute right-0 top-full mt-1 w-48 bg-background border rounded-md shadow-lg z-10">
+        {/* Dropdown Menu - Using fixed positioning */}
+        {isMenuOpen && menuPosition && (
+          <div
+            ref={menuRef}
+            className="fixed w-48 bg-background border rounded-md shadow-lg z-50"
+            style={{
+              top: `${menuPosition.top}px`,
+              right: `${menuPosition.right}px`,
+            }}
+          >
             {object.type === "file" && (
               <>
                 <button
@@ -402,6 +446,62 @@ export default function BucketDetailPage() {
 
   // Track which folders we've already created for uploads
   const createdFoldersRef = useRef<Set<string>>(new Set());
+
+  // Handle bulk copy URLs
+  const handleBulkCopyUrls = async () => {
+    if (selectedItems.size === 0) return;
+
+    const selectedObjects = objects.filter(obj => selectedItems.has(obj.id) && obj.type === "file");
+
+    if (selectedObjects.length === 0) {
+      setToast({ message: "No files selected", type: "error" });
+      return;
+    }
+
+    const urls = selectedObjects.map(obj => {
+      const fullPath = obj.path ? `${obj.path}/${obj.name}` : obj.name;
+      return `https://cdn.gauas.online/${bucketName}/${fullPath}`;
+    });
+
+    const urlsText = urls.join("\n");
+
+    try {
+      await navigator.clipboard.writeText(urlsText);
+      setToast({ message: `Copied ${urls.length} URL(s) to clipboard`, type: "success" });
+    } catch {
+      setToast({ message: "Failed to copy URLs", type: "error" });
+    }
+  };
+
+  // Handle bulk download
+  const handleBulkDownload = () => {
+    if (selectedItems.size === 0) return;
+
+    const selectedObjects = objects.filter(obj => selectedItems.has(obj.id) && obj.type === "file");
+
+    if (selectedObjects.length === 0) {
+      setToast({ message: "No files selected", type: "error" });
+      return;
+    }
+
+    // Download each file with a small delay to avoid browser blocking
+    selectedObjects.forEach((obj, index) => {
+      setTimeout(() => {
+        const fullPath = obj.path ? `${obj.path}/${obj.name}` : obj.name;
+        const cdnUrl = `https://cdn.gauas.online/${bucketName}/${fullPath}`;
+        const downloadUrl = `${cdnUrl}?mode=download`;
+
+        const a = document.createElement("a");
+        a.href = downloadUrl;
+        a.download = obj.name;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }, index * 300); // 300ms delay between each download
+    });
+
+    setToast({ message: `Downloading ${selectedObjects.length} file(s)...`, type: "success" });
+  };
 
   // Handle bulk delete
   const handleBulkDelete = async () => {
@@ -768,41 +868,75 @@ export default function BucketDetailPage() {
             })}
           </div>
 
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-bold">Bucket Objects</h1>
-              <p className="text-muted-foreground">
+              <h1 className="text-xl sm:text-2xl font-bold">Bucket Objects</h1>
+              <p className="text-sm text-muted-foreground">
                 {folderCount} folder(s), {objectCount} file(s)
                 {currentPath && ` in /${currentPath}`}
               </p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               {selectedItems.size > 0 && (
-                <Button
-                  variant="outline"
-                  onClick={handleBulkDelete}
-                  disabled={isDeleting}
-                  className="text-red-600 dark:text-red-400 border-red-600 dark:border-red-400 hover:bg-red-50 dark:hover:bg-red-950"
-                >
-                  {isDeleting ? "Deleting..." : `Delete Selected (${selectedItems.size})`}
-                </Button>
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleBulkCopyUrls}
+                    className="text-blue-600 dark:text-blue-400 border-blue-600 dark:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950"
+                  >
+                    <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    <span className="hidden sm:inline">Copy URLs ({selectedItems.size})</span>
+                    <span className="sm:hidden">Copy</span>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleBulkDownload}
+                    className="text-green-600 dark:text-green-400 border-green-600 dark:border-green-400 hover:bg-green-50 dark:hover:bg-green-950"
+                  >
+                    <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    <span className="hidden sm:inline">Download ({selectedItems.size})</span>
+                    <span className="sm:hidden">Download</span>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleBulkDelete}
+                    disabled={isDeleting}
+                    className="text-red-600 dark:text-red-400 border-red-600 dark:border-red-400 hover:bg-red-50 dark:hover:bg-red-950"
+                  >
+                    <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    {isDeleting ? "Deleting..." : <><span className="hidden sm:inline">Delete ({selectedItems.size})</span><span className="sm:hidden">Delete</span></>}
+                  </Button>
+                </>
               )}
               {currentPath && (
-                <Button variant="outline" onClick={navigateUp}>
+                <Button variant="outline" size="sm" onClick={navigateUp}>
                   ← Back
                 </Button>
               )}
-              <Button variant="outline" onClick={() => setIsUploadDialogOpen(true)}>
-                Upload File
+              <Button variant="outline" size="sm" onClick={() => setIsUploadDialogOpen(true)}>
+                <span className="hidden sm:inline">Upload File</span>
+                <span className="sm:hidden">Upload</span>
               </Button>
-              <Button onClick={() => setIsCreateFolderOpen(true)}>Create Folder</Button>
-              <Link href="/dashboard/document/object-storage" target="_blank">
-                <Button variant="outline">
-                  API Document
+              <Button size="sm" onClick={() => setIsCreateFolderOpen(true)}>
+                <span className="hidden sm:inline">Create Folder</span>
+                <span className="sm:hidden">New Folder</span>
+              </Button>
+              <Link href="/dashboard/document/object-storage" target="_blank" className="hidden md:block">
+                <Button variant="outline" size="sm">
+                  API Doc
                 </Button>
               </Link>
-              <Button variant="outline" onClick={handleOpenSettings} className="px-3">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <Button variant="outline" size="sm" onClick={handleOpenSettings} className="px-2 sm:px-3">
+                <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
@@ -836,21 +970,22 @@ export default function BucketDetailPage() {
                   </Button>
                 </div>
               ) : (
-                <div className="rounded-lg border">
-                  <div className="flex items-center gap-2 border-b bg-muted/50 px-4 py-2 text-xs font-medium text-muted-foreground">
-                    <input
-                      type="checkbox"
-                      checked={visibleObjects.length > 0 && selectedItems.size === visibleObjects.length}
-                      onChange={handleToggleSelectAll}
-                      className="w-4 h-4 cursor-pointer"
-                      title="Select all"
-                    />
-                    <span className="flex-1">Name</span>
-                    <span className="w-24 text-right">Size</span>
-                    <span className="w-32 text-right">Modified</span>
-                    <span className="w-8"></span>
-                  </div>
-                  <div className="divide-y">
+                <div className="rounded-lg border overflow-x-auto">
+                  <div className="min-w-full">
+                    <div className="flex items-center gap-2 border-b bg-muted/50 px-3 sm:px-4 py-2 text-xs font-medium text-muted-foreground">
+                      <input
+                        type="checkbox"
+                        checked={visibleObjects.length > 0 && selectedItems.size === visibleObjects.length}
+                        onChange={handleToggleSelectAll}
+                        className="w-4 h-4 cursor-pointer"
+                        title="Select all"
+                      />
+                      <span className="flex-1">Name</span>
+                      <span className="w-16 sm:w-24 text-right hidden sm:block">Size</span>
+                      <span className="w-24 sm:w-32 text-right hidden md:block">Modified</span>
+                      <span className="w-8"></span>
+                    </div>
+                    <div className="divide-y">
                     {/* Uploading files (shown with opacity and progress) */}
                     {uploadingFiles.map((uploadFile) => (
                       <UploadingRow
@@ -881,6 +1016,7 @@ export default function BucketDetailPage() {
                         onShowToast={(message, type) => setToast({ message, type })}
                       />
                     ))}
+                    </div>
                   </div>
                 </div>
               )}

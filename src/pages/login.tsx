@@ -54,18 +54,18 @@ export default function LoginPage() {
         <title>Sign In - Gauas Cloud</title>
       </Head>
 
-      <div className="flex min-h-screen items-center justify-center px-4 bg-muted/30">
+      <div className="flex min-h-screen items-center justify-center px-4 py-8 bg-muted/30">
         <Card className="w-full max-w-md">
-          <CardHeader className="text-center">
-            <Link href="/" className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold text-xl">
-              HC
+          <CardHeader className="text-center p-4 sm:p-6">
+            <Link href="/" className="mx-auto mb-4 flex items-center justify-center">
+              <img src="/logo.svg" alt="Gauas Cloud" className="h-10 w-10 sm:h-12 sm:w-12" />
             </Link>
-            <CardTitle className="text-2xl">Sign in to your account</CardTitle>
-            <CardDescription>
+            <CardTitle className="text-xl sm:text-2xl">Sign in to your account</CardTitle>
+            <CardDescription className="text-sm">
               Enter your email and password to access your dashboard
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-4 sm:p-6 pt-0 sm:pt-0">
             <div className="space-y-4">
               {error && (
                 <Alert variant="destructive">

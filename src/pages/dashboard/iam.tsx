@@ -105,29 +105,29 @@ export default function IAMPage() {
       </Head>
 
       <DashboardLayout>
-        <div className="space-y-6">
-          <div className="flex items-center justify-between">
+        <div className="space-y-4 sm:space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-bold">IAM</h1>
-              <p className="text-muted-foreground">
+              <h1 className="text-xl sm:text-2xl font-bold">IAM</h1>
+              <p className="text-sm text-muted-foreground">
                 Manage access credentials for your cloud services
               </p>
             </div>
-            <Button onClick={() => setIsCreateOpen(true)}>Create IAM User</Button>
+            <Button onClick={() => setIsCreateOpen(true)} className="w-full sm:w-auto">Create IAM User</Button>
           </div>
 
           {error && <Alert variant="destructive">{error}</Alert>}
 
           <Card>
-            <CardHeader>
-              <CardTitle>IAM Users</CardTitle>
+            <CardHeader className="p-4 sm:p-6">
+              <CardTitle className="text-base sm:text-lg">IAM Users</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-4 sm:p-6 pt-0 sm:pt-0">
               {isLoading ? (
                 <Loading message="Loading users..." />
               ) : users.length === 0 ? (
-                <div className="py-12 text-center">
-                  <p className="text-muted-foreground">No IAM users found</p>
+                <div className="py-8 sm:py-12 text-center">
+                  <p className="text-sm text-muted-foreground">No IAM users found</p>
                   <Button
                     variant="outline"
                     className="mt-4"
@@ -137,54 +137,61 @@ export default function IAMPage() {
                   </Button>
                 </div>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Email</TableHead>
-                      <TableHead>Access Key</TableHead>
-                      <TableHead>Role</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {users.map((user) => (
-                      <TableRow key={user.id}>
-                        <TableCell className="font-medium">{user.name}</TableCell>
-                        <TableCell>{user.email}</TableCell>
-                        <TableCell>
-                          <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-                            {user.accessKey}
-                          </code>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="secondary">
-                            {user.role}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => openViewSecret(user)}
-                          >
-                            View Secret
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              setSelectedUser(user);
-                              setIsDeleteOpen(true);
-                            }}
-                          >
-                            Delete
-                          </Button>
-                        </TableCell>
+                <div className="overflow-x-auto -mx-4 sm:mx-0">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead className="hidden sm:table-cell">Email</TableHead>
+                        <TableHead className="hidden md:table-cell">Access Key</TableHead>
+                        <TableHead className="hidden lg:table-cell">Role</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {users.map((user) => (
+                        <TableRow key={user.id}>
+                          <TableCell className="font-medium text-sm">{user.name}</TableCell>
+                          <TableCell className="hidden sm:table-cell text-sm">{user.email}</TableCell>
+                          <TableCell className="hidden md:table-cell">
+                            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                              {user.accessKey}
+                            </code>
+                          </TableCell>
+                          <TableCell className="hidden lg:table-cell">
+                            <Badge variant="secondary">
+                              {user.role}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => openViewSecret(user)}
+                                className="text-xs px-2"
+                              >
+                                <span className="hidden sm:inline">View Secret</span>
+                                <span className="sm:hidden">Secret</span>
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedUser(user);
+                                  setIsDeleteOpen(true);
+                                }}
+                                className="text-xs px-2"
+                              >
+                                Delete
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               )}
             </CardContent>
           </Card>

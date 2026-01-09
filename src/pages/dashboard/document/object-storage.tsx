@@ -165,11 +165,11 @@ export default function ObjectStorageDocPage() {
       </Head>
 
       <DashboardLayout>
-        <div className="max-w-5xl mx-auto space-y-8 py-8">
+        <div className="max-w-5xl mx-auto space-y-6 sm:space-y-8 py-4 sm:py-8">
           {/* Header */}
           <div>
-            <h1 className="text-3xl font-bold mb-2">Object Storage API Documentation</h1>
-            <p className="text-muted-foreground">
+            <h1 className="text-2xl sm:text-3xl font-bold mb-2">Object Storage API Documentation</h1>
+            <p className="text-sm sm:text-base text-muted-foreground">
               Complete guide for managing files and folders in Object Storage using our API
             </p>
           </div>
