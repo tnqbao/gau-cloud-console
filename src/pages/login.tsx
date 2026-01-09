@@ -51,7 +51,7 @@ export default function LoginPage() {
   return (
     <>
       <Head>
-        <title>Sign In - Home Cloud</title>
+        <title>Sign In - Gauas Cloud</title>
       </Head>
 
       <div className="flex min-h-screen items-center justify-center px-4 bg-muted/30">

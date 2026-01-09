@@ -52,7 +52,7 @@ export default function DashboardPage() {
   return (
     <AuthGuard>
       <Head>
-        <title>Dashboard - Home Cloud</title>
+        <title>Dashboard - Gauas Cloud</title>
       </Head>
 
       <DashboardLayout>

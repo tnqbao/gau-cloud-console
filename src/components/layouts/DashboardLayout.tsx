@@ -1,4 +1,5 @@
 import Link from "next/link";
+import NextImage from "next/image";
 import { useRouter } from "next/router";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/Button";
@@ -81,10 +82,8 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       <header className="sticky top-0 z-40 border-b bg-background">
         <div className="flex h-14 items-center px-6">
           <Link href="/dashboard" className="flex items-center space-x-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded bg-primary text-primary-foreground font-bold text-sm">
-              HC
-            </div>
-            <span className="font-semibold">Home Cloud</span>
+            <NextImage src="/logo.svg" alt="Logo" width={32} height={32} />
+            <span className="font-semibold">Gauas Cloud</span>
           </Link>
 
           <div className="ml-auto flex items-center space-x-4">
@@ -121,7 +120,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                 </span>
                 <span className="flex-1">{item.label}</span>
                 {item.comingSoon && (
-                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-muted text-foreground border">
                     Soon
                   </span>
                 )}

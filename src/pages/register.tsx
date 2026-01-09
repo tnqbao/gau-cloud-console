@@ -55,7 +55,7 @@ export default function RegisterPage() {
             </Link>
             <CardTitle className="text-2xl">Create your account</CardTitle>
             <CardDescription>
-              Get started with Home Cloud today
+              Get started with Gauas Cloud today
             </CardDescription>
           </CardHeader>
           <CardContent>

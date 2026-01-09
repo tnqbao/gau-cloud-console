@@ -7,7 +7,7 @@ export default function SQSPage() {
   return (
     <AuthGuard>
       <Head>
-        <title>Message Queue - Home Cloud</title>
+        <title>Message Queue - Gauas Cloud</title>
       </Head>
 
       <DashboardLayout>

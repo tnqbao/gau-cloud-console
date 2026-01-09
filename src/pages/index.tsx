@@ -27,10 +27,10 @@ export default function HomePage() {
   return (
     <>
       <Head>
-        <title>Home Cloud - Your Personal Cloud Platform</title>
+        <title>Gauas Cloud - Open Source Cloud Platform</title>
         <meta
           name="description"
-          content="Home Cloud Orchestrator - A self-hosted AWS-like cloud platform for your home infrastructure"
+          content="Gauas Cloud - An open source, self-hosted cloud platform for your infrastructure. S3-compatible storage, IAM, and more."
         />
       </Head>
 
@@ -38,12 +38,12 @@ export default function HomePage() {
         <section className="py-20 md:py-32">
           <div className="mx-auto max-w-7xl px-6 text-center">
             <h1 className="text-4xl font-bold tracking-tight md:text-6xl">
-              Your Personal Cloud
-              <span className="block text-primary">Infrastructure</span>
+              Open Source Cloud
+              <span className="block text-primary">Platform</span>
             </h1>
             <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground">
-              Deploy and manage cloud services at home. Object storage, IAM, message queues,
-              and more — all with an AWS-like experience.
+              Self-hosted, open source cloud infrastructure. Object storage, IAM, message queues,
+              and more — built for developers who value control and transparency.
             </p>
             <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
               <Link href="/register">

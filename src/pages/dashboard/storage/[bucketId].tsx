@@ -9,6 +9,10 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Loading } from "@/components/ui/Loading";
 import { Alert } from "@/components/ui/Alert";
+import { Input } from "@/components/ui/Input";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
+import { Toast } from "@/components/ui/Toast";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useBucketObjects, useBuckets } from "@/hooks/useStorage";
 import { UploadDialog } from "@/components/storage/UploadDialog";
 import { useUploadManager, UploadingFile, formatBytes } from "@/contexts/UploadManagerContext";
@@ -16,7 +20,9 @@ import { BucketObject } from "@/types";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { FileIcon } from "@/components/files/FileIcon";
-import { STORAGE_ENDPOINTS } from "@/lib/config";
+import { STORAGE_ENDPOINTS, BACKEND_API_URL } from "@/lib/config";
+import { getToken } from "@/lib/api";
+import { getDeviceId } from "@/lib/device";
 
 interface ObjectRowProps {
   object: BucketObject;
@@ -26,9 +32,10 @@ interface ObjectRowProps {
   onDelete: () => void;
   isSelected: boolean;
   onSelectChange: (selected: boolean) => void;
+  onShowToast: (message: string, type: "success" | "error" | "info") => void;
 }
 
-function ObjectRow({ object, bucketId, bucketName, onFolderClick, onDelete, isSelected, onSelectChange }: ObjectRowProps) {
+function ObjectRow({ object, bucketId, bucketName, onFolderClick, onDelete, isSelected, onSelectChange, onShowToast }: ObjectRowProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -76,10 +83,9 @@ function ObjectRow({ object, bucketId, bucketName, onFolderClick, onDelete, isSe
     const cdnUrl = getCdnUrl();
     try {
       await navigator.clipboard.writeText(cdnUrl);
-      // Show a brief success indicator (you could replace this with a toast notification)
-      alert("Link copied to clipboard!");
+      onShowToast("Link copied to clipboard!", "success");
     } catch {
-      alert("Failed to copy link to clipboard");
+      onShowToast("Failed to copy link", "error");
     }
   };
 
@@ -351,6 +357,18 @@ export default function BucketDetailPage() {
   const router = useRouter();
   const { bucketId } = router.query as { bucketId: string };
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
+  const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isPublicConfirmOpen, setIsPublicConfirmOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [createFolderError, setCreateFolderError] = useState("");
+  const [bucketAccess, setBucketAccess] = useState<"private" | "public">("private");
+  const [isLoadingAccess, setIsLoadingAccess] = useState(false);
+  const [accessError, setAccessError] = useState("");
+  const [copiedId, setCopiedId] = useState(false);
+  const [hiddenFiles, setHiddenFiles] = useState<Set<string>>(new Set());
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
   const lastCompletedCountRef = useRef(0);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
@@ -420,12 +438,15 @@ export default function BucketDetailPage() {
     }
   };
 
-  // Toggle select all
+  // Toggle select all (need to define after visibleObjects)
   const handleToggleSelectAll = () => {
-    if (selectedItems.size === objects.length) {
+    const visibleObjs = objects.filter(obj =>
+      !(obj.type === "file" && obj.name === "temp.file") && !hiddenFiles.has(obj.id)
+    );
+    if (selectedItems.size === visibleObjs.length) {
       setSelectedItems(new Set());
     } else {
-      setSelectedItems(new Set(objects.map(obj => obj.id)));
+      setSelectedItems(new Set(visibleObjs.map(obj => obj.id)));
     }
   };
 
@@ -433,6 +454,149 @@ export default function BucketDetailPage() {
   useEffect(() => {
     setSelectedItems(new Set());
   }, [currentPath]);
+
+  // Handle copy bucket ID
+  const handleCopyId = async () => {
+    try {
+      await navigator.clipboard.writeText(bucketId);
+      setCopiedId(true);
+      setTimeout(() => setCopiedId(false), 2000);
+      setToast({
+        message: "Bucket ID copied to clipboard!",
+        type: "success",
+      });
+    } catch (err) {
+      console.error("Failed to copy ID:", err);
+      setToast({
+        message: "Failed to copy ID",
+        type: "error",
+      });
+    }
+  };
+
+  // Handle open settings and fetch bucket access
+  const handleOpenSettings = async () => {
+    setIsSettingsOpen(true);
+    setAccessError("");
+    setIsLoadingAccess(true);
+
+    try {
+      const response = await api.get<{ access: "private" | "public"; bucket: string; status: number }>(
+        STORAGE_ENDPOINTS.bucketAccess(bucketId)
+      );
+      setBucketAccess(response.access);
+    } catch (err) {
+      setAccessError(err instanceof Error ? err.message : "Failed to fetch bucket access");
+      setBucketAccess("private");
+    } finally {
+      setIsLoadingAccess(false);
+    }
+  };
+
+  // Handle access toggle with confirmation
+  const handleAccessToggle = async (newAccess: "private" | "public") => {
+    // If switching to public, show custom confirmation dialog
+    if (newAccess === "public") {
+      setIsPublicConfirmOpen(true);
+      return;
+    }
+
+    // Switch to private without confirmation
+    await performAccessUpdate(newAccess);
+  };
+
+  // Perform the actual access update
+  const performAccessUpdate = async (newAccess: "private" | "public") => {
+    setIsLoadingAccess(true);
+    setAccessError("");
+    try {
+      await api.put(STORAGE_ENDPOINTS.bucketAccess(bucketId), { access: newAccess });
+      setBucketAccess(newAccess);
+      setToast({
+        message: `Bucket access changed to ${newAccess}`,
+        type: "success",
+      });
+    } catch (err) {
+      setAccessError(err instanceof Error ? err.message : "Failed to update bucket access");
+      setToast({
+        message: "Failed to update bucket access",
+        type: "error",
+      });
+    } finally {
+      setIsLoadingAccess(false);
+    }
+  };
+
+  // Confirm public access
+  const handleConfirmPublic = async () => {
+    setIsPublicConfirmOpen(false);
+    await performAccessUpdate("public");
+  };
+
+  // Handle create folder
+  const handleCreateFolder = async () => {
+    if (!newFolderName.trim()) {
+      setCreateFolderError("Folder name is required");
+      return;
+    }
+
+    setIsCreatingFolder(true);
+    setCreateFolderError("");
+
+    try {
+      // Create a small temp file
+      const tempContent = new Blob(["temp"], { type: "text/plain" });
+      const tempFile = new File([tempContent], "temp.file", { type: "text/plain" });
+
+      // Construct the path for the temp file
+      const folderPath = currentPath ? `${currentPath}/${newFolderName}` : newFolderName;
+
+      // Upload the temp file to create the folder
+      const formData = new FormData();
+      formData.append("file", tempFile);
+      formData.append("path", folderPath);
+
+      const token = getToken();
+      const headers: HeadersInit = {
+        "X-Device-ID": getDeviceId(),
+      };
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(
+        `${BACKEND_API_URL}/api/v1/cloud/buckets/${bucketId}/objects`,
+        {
+          method: "POST",
+          headers,
+          body: formData,
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to create folder");
+      }
+
+      const result = await response.json();
+
+      // Add the temp file ID to hidden files list
+      if (result.object?.id) {
+        setHiddenFiles(prev => new Set(prev).add(result.object.id));
+      }
+
+      // Add folder to UI
+      addFolder(newFolderName);
+
+      // Reset and close
+      setNewFolderName("");
+      setIsCreateFolderOpen(false);
+    } catch (err) {
+      setCreateFolderError(err instanceof Error ? err.message : "Failed to create folder");
+    } finally {
+      setIsCreatingFolder(false);
+    }
+  };
 
   // Auto-create folder entries when files are being uploaded to new folders
   useEffect(() => {
@@ -554,10 +718,15 @@ export default function BucketDetailPage() {
   const pathParts = currentPath ? currentPath.split("/") : [];
   const displayBucketName = bucketName || bucketId;
 
+  // Filter out hidden files (temp.file)
+  const visibleObjects = objects.filter(obj =>
+    !(obj.type === "file" && obj.name === "temp.file") && !hiddenFiles.has(obj.id)
+  );
+
   return (
     <AuthGuard>
       <Head>
-        <title>{displayBucketName ? `${displayBucketName} - Storage` : "Bucket Detail"} - Home Cloud</title>
+        <title>{displayBucketName ? `${displayBucketName} - Storage` : "Bucket Detail"} - Gauas Cloud</title>
       </Head>
 
       <DashboardLayout>
@@ -623,15 +792,21 @@ export default function BucketDetailPage() {
                   ← Back
                 </Button>
               )}
+              <Button variant="outline" onClick={() => setIsUploadDialogOpen(true)}>
+                Upload File
+              </Button>
+              <Button onClick={() => setIsCreateFolderOpen(true)}>Create Folder</Button>
               <Link href="/dashboard/document/object-storage" target="_blank">
                 <Button variant="outline">
                   API Document
                 </Button>
               </Link>
-              <Button variant="outline" onClick={() => setIsUploadDialogOpen(true)}>
-                Upload File
+              <Button variant="outline" onClick={handleOpenSettings} className="px-3">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
               </Button>
-              <Button>Create Folder</Button>
             </div>
           </div>
 
@@ -647,7 +822,7 @@ export default function BucketDetailPage() {
             <CardContent>
               {isLoading ? (
                 <Loading message="Loading objects..." />
-              ) : objects.length === 0 && uploadingFiles.length === 0 ? (
+              ) : visibleObjects.length === 0 && uploadingFiles.length === 0 ? (
                 <div className="py-12 text-center">
                   <p className="text-muted-foreground">
                     {currentPath ? "This folder is empty" : "This bucket is empty"}
@@ -665,7 +840,7 @@ export default function BucketDetailPage() {
                   <div className="flex items-center gap-2 border-b bg-muted/50 px-4 py-2 text-xs font-medium text-muted-foreground">
                     <input
                       type="checkbox"
-                      checked={objects.length > 0 && selectedItems.size === objects.length}
+                      checked={visibleObjects.length > 0 && selectedItems.size === visibleObjects.length}
                       onChange={handleToggleSelectAll}
                       className="w-4 h-4 cursor-pointer"
                       title="Select all"
@@ -685,7 +860,7 @@ export default function BucketDetailPage() {
                       />
                     ))}
                     {/* Existing objects */}
-                    {objects.map((object) => (
+                    {visibleObjects.map((object) => (
                       <ObjectRow
                         key={object.id}
                         object={object}
@@ -703,6 +878,7 @@ export default function BucketDetailPage() {
                           }
                           setSelectedItems(newSelection);
                         }}
+                        onShowToast={(message, type) => setToast({ message, type })}
                       />
                     ))}
                   </div>
@@ -719,6 +895,152 @@ export default function BucketDetailPage() {
             onUploadStarted={handleUploadStarted}
             currentPath={currentPath}
           />
+
+          {/* Create Folder Dialog */}
+          <Dialog open={isCreateFolderOpen} onClose={() => setIsCreateFolderOpen(false)}>
+            <DialogHeader>
+              <DialogTitle>Create Folder</DialogTitle>
+            </DialogHeader>
+            <DialogContent>
+              {createFolderError && (
+                <Alert variant="destructive" className="mb-4">
+                  {createFolderError}
+                </Alert>
+              )}
+              <div className="space-y-2">
+                <label htmlFor="folderName" className="text-sm font-medium">
+                  Folder Name
+                </label>
+                <Input
+                  id="folderName"
+                  placeholder="my-folder"
+                  value={newFolderName}
+                  onChange={(e) => setNewFolderName(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === "Enter") {
+                      handleCreateFolder();
+                    }
+                  }}
+                />
+              </div>
+            </DialogContent>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsCreateFolderOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleCreateFolder} isLoading={isCreatingFolder}>
+                Create
+              </Button>
+            </DialogFooter>
+          </Dialog>
+
+          {/* Settings Dialog */}
+          <Dialog open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)}>
+            <DialogHeader>
+              <DialogTitle>Bucket Settings</DialogTitle>
+            </DialogHeader>
+            <DialogContent>
+              {accessError && (
+                <Alert variant="destructive" className="mb-4">
+                  {accessError}
+                </Alert>
+              )}
+              <div className="space-y-6">
+                {/* Bucket ID */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Bucket ID</label>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 px-3 py-2 text-xs bg-muted rounded border font-mono break-all">
+                      {bucketId}
+                    </code>
+                    <button
+                      onClick={handleCopyId}
+                      className="shrink-0 px-3 py-2 text-xs bg-background hover:bg-muted border rounded transition-colors"
+                      title="Copy ID"
+                    >
+                      {copiedId ? "Copied!" : "Copy"}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Bucket Name */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Bucket Name</label>
+                  <div className="px-3 py-2 bg-muted rounded border">
+                    {bucketName || bucketId}
+                  </div>
+                </div>
+
+                {/* Bucket Access - Toggle Style */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Bucket Access</label>
+                  <div className="flex items-center justify-between p-4 border rounded-md">
+                    <div>
+                      <div className="font-medium">
+                        {bucketAccess === "public" ? "Public" : "Private"}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {bucketAccess === "public"
+                          ? "Anyone can access files"
+                          : "Only authorized users can access"}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleAccessToggle(bucketAccess === "public" ? "private" : "public")}
+                      disabled={isLoadingAccess}
+                      className={cn(
+                        "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
+                        bucketAccess === "public" ? "bg-blue-600" : "bg-gray-300 dark:bg-gray-600",
+                        isLoadingAccess && "opacity-50 cursor-not-allowed"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+                          bucketAccess === "public" ? "translate-x-6" : "translate-x-1"
+                        )}
+                      />
+                    </button>
+                  </div>
+                  {bucketAccess === "public" && (
+                    <div className="text-xs text-yellow-600 dark:text-yellow-400 flex items-start gap-1">
+                      <svg className="w-4 h-4 shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                      </svg>
+                      <span>This bucket is publicly accessible. Anyone with the link can view files.</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </DialogContent>
+            <DialogFooter>
+              <Button onClick={() => setIsSettingsOpen(false)}>
+                Close
+              </Button>
+            </DialogFooter>
+          </Dialog>
+
+          {/* Public Access Confirmation Dialog */}
+          <ConfirmDialog
+            isOpen={isPublicConfirmOpen}
+            onClose={() => setIsPublicConfirmOpen(false)}
+            onConfirm={handleConfirmPublic}
+            title="Make Bucket Public?"
+            message={`Are you sure you want to make this bucket PUBLIC?\n\nAnyone with the link will be able to access all files in this bucket without authentication.\n\nThis action can be reversed at any time.`}
+            confirmText="Make Public"
+            cancelText="Cancel"
+            variant="warning"
+            isLoading={isLoadingAccess}
+          />
+
+          {/* Toast Notification */}
+          {toast && (
+            <Toast
+              message={toast.message}
+              type={toast.type}
+              onClose={() => setToast(null)}
+            />
+          )}
         </div>
       </DashboardLayout>
     </AuthGuard>

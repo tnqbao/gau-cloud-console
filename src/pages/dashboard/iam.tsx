@@ -101,7 +101,7 @@ export default function IAMPage() {
   return (
     <AuthGuard>
       <Head>
-        <title>IAM - Home Cloud</title>
+        <title>IAM - Gauas Cloud</title>
       </Head>
 
       <DashboardLayout>
