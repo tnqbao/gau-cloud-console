@@ -70,6 +70,11 @@ export function UploadDialog({
 
   // Process files with folder structure
   const processFiles = useCallback(async (items: DataTransferItemList | FileList) => {
+    console.log('[UploadDialog] processFiles called', {
+      itemsLength: items.length,
+      isFileList: 'length' in items && items[0] instanceof File
+    });
+
     // Fetch existing files from bucket API to check for duplicates
     let existingFilesInBucket = new Set<string>();
     try {
@@ -80,107 +85,123 @@ export function UploadDialog({
       console.warn('Failed to fetch existing files for duplicate check:', error);
     }
 
-    const newItems: FileItem[] = [];
-    // Track both files in dialog and files in bucket
-    const fileNames = new Set<string>([
-      ...fileItems.map(item => item.name),
-      ...Array.from(existingFilesInBucket)
-    ]);
-
+    // Check if this is a FileList (from file input)
     if ('length' in items && items[0] instanceof File) {
       // FileList from input
       const files = Array.from(items as FileList);
-      for (const file of files) {
-        // Check against both dialog files and bucket files
-        const uniqueName = getUniqueFileName(file.name, fileNames);
-        fileNames.add(uniqueName);
+      console.log('[UploadDialog] Processing FileList', { filesCount: files.length });
 
-        // Create new File with renamed filename if duplicate was found
-        const finalFile = uniqueName === file.name
-          ? file
-          : new File([file], uniqueName, { type: file.type, lastModified: file.lastModified });
-
-        newItems.push({
-          id: `${Date.now()}-${Math.random()}`,
-          name: uniqueName,
-          file: finalFile,
-          path: "",
-          isFolder: false,
+      setFileItems((currentFileItems) => {
+        console.log('[UploadDialog] setFileItems callback', {
+          currentItemsCount: currentFileItems.length,
+          existingInBucket: existingFilesInBucket.size
         });
-      }
-    } else {
-      // DataTransferItemList with folder support
-      const entries: FileSystemEntry[] = [];
-      for (let i = 0; i < items.length; i++) {
-        const item = (items as DataTransferItemList)[i].webkitGetAsEntry();
-        if (item) entries.push(item);
-      }
 
-      const readEntry = async (entry: FileSystemEntry, path: string = ""): Promise<FileItem[]> => {
-        if (entry.isFile) {
-          const fileEntry = entry as FileSystemFileEntry;
-          return new Promise((resolve) => {
-            fileEntry.file((file) => {
-              const uniqueName = getUniqueFileName(file.name, fileNames);
-              fileNames.add(uniqueName);
+        // Track both files in dialog and files in bucket
+        const fileNames = new Set<string>([
+          ...currentFileItems.map(item => item.name),
+          ...Array.from(existingFilesInBucket)
+        ]);
 
-              const finalFile = uniqueName === file.name
-                ? file
-                : new File([file], uniqueName, { type: file.type, lastModified: file.lastModified });
+        const newItems: FileItem[] = [];
+        for (const file of files) {
+          // Check against both dialog files and bucket files
+          const uniqueName = getUniqueFileName(file.name, fileNames);
+          fileNames.add(uniqueName);
 
-              resolve([{
-                id: `${Date.now()}-${Math.random()}`,
-                name: uniqueName,
-                file: finalFile,
-                path: path,
-                isFolder: false,
-              }]);
-            });
-          });
-        } else if (entry.isDirectory) {
-          const dirEntry = entry as FileSystemDirectoryEntry;
-          const dirReader = dirEntry.createReader();
-          const children: FileItem[] = [];
+          // Create new File with renamed filename if duplicate was found
+          const finalFile = uniqueName === file.name
+            ? file
+            : new File([file], uniqueName, { type: file.type, lastModified: file.lastModified });
 
-          return new Promise((resolve) => {
-            const readBatch = () => {
-              dirReader.readEntries(async (entries) => {
-                if (entries.length === 0) {
-                  resolve([{
-                    id: `${Date.now()}-${Math.random()}`,
-                    name: dirEntry.name,
-                    file: new File([], dirEntry.name),
-                    path: path,
-                    isFolder: true,
-                    children,
-                  }]);
-                } else {
-                  for (const entry of entries) {
-                    const items = await readEntry(entry, path ? `${path}/${dirEntry.name}` : dirEntry.name);
-                    children.push(...items);
-                  }
-                  readBatch();
-                }
-              });
-            };
-            readBatch();
+          newItems.push({
+            id: `${Date.now()}-${Math.random()}`,
+            name: uniqueName,
+            file: finalFile,
+            path: "",
+            isFolder: false,
           });
         }
-        return [];
-      };
 
-      for (const entry of entries) {
-        const items = await readEntry(entry);
-        newItems.push(...items);
-      }
+        console.log('[UploadDialog] Created newItems', { count: newItems.length });
+        const result = [...currentFileItems, ...newItems];
+        console.log('[UploadDialog] Returning updated items', { totalCount: result.length });
+        return result;
+      });
+      return; // Early return to prevent processing as DataTransferItemList
     }
 
-    setFileItems((prev) => [...prev, ...newItems]);
-  }, [fileItems, bucketId, currentPath]);
+    // Handle DataTransferItemList (from drag & drop)
+    const entries: FileSystemEntry[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = (items as DataTransferItemList)[i].webkitGetAsEntry();
+      if (item) entries.push(item);
+    }
 
-  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const readEntry = async (entry: FileSystemEntry, path: string = ""): Promise<FileItem[]> => {
+      if (entry.isFile) {
+        const fileEntry = entry as FileSystemFileEntry;
+        return new Promise((resolve) => {
+          fileEntry.file((file) => {
+            resolve([{
+              id: `${Date.now()}-${Math.random()}`,
+              name: file.name,
+              file: file,
+              path: path,
+              isFolder: false,
+            }]);
+          });
+        });
+      } else if (entry.isDirectory) {
+        const dirEntry = entry as FileSystemDirectoryEntry;
+        const dirReader = dirEntry.createReader();
+        const children: FileItem[] = [];
+
+        return new Promise((resolve) => {
+          const readBatch = () => {
+            dirReader.readEntries(async (entries) => {
+              if (entries.length === 0) {
+                resolve([{
+                  id: `${Date.now()}-${Math.random()}`,
+                  name: dirEntry.name,
+                  file: new File([], dirEntry.name),
+                  path: path,
+                  isFolder: true,
+                  children,
+                }]);
+              } else {
+                for (const entry of entries) {
+                  const items = await readEntry(entry, path ? `${path}/${dirEntry.name}` : dirEntry.name);
+                  children.push(...items);
+                }
+                readBatch();
+              }
+            });
+          };
+          readBatch();
+        });
+      }
+      return [];
+    };
+
+    const draggedItems: FileItem[] = [];
+    for (const entry of entries) {
+      const items = await readEntry(entry);
+      draggedItems.push(...items);
+    }
+
+    setFileItems((prev) => [...prev, ...draggedItems]);
+  }, [bucketId, currentPath]);
+
+  const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log('[UploadDialog] File input changed', {
+      filesCount: e.target.files?.length,
+      files: e.target.files ? Array.from(e.target.files).map(f => f.name) : []
+    });
     if (e.target.files && e.target.files.length > 0) {
-      processFiles(e.target.files);
+      await processFiles(e.target.files);
     }
     e.target.value = ""; // Reset input
   };
@@ -345,7 +366,12 @@ export function UploadDialog({
             style={{ paddingLeft: `${depth * 20 + 10}px` }}
           >
             <button
-              onClick={() => toggleFolder(item.id)}
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                toggleFolder(item.id);
+              }}
               className="shrink-0 w-5 h-5 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
             >
               <svg
@@ -366,7 +392,12 @@ export function UploadDialog({
               {childFileCount} file{childFileCount !== 1 ? "s" : ""}
             </span>
             <button
-              onClick={() => removeItem(item.id)}
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                removeItem(item.id);
+              }}
               className="shrink-0 w-7 h-7 flex items-center justify-center rounded hover:bg-red-100 dark:hover:bg-red-900/30 opacity-0 group-hover:opacity-100 transition-all"
               title="Remove"
             >
@@ -397,7 +428,12 @@ export function UploadDialog({
           <p className="text-xs text-gray-500 dark:text-gray-400">{formatBytes(item.file.size)}</p>
         </div>
         <button
-          onClick={() => removeItem(item.id)}
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            removeItem(item.id);
+          }}
           className="shrink-0 w-7 h-7 flex items-center justify-center rounded hover:bg-red-100 dark:hover:bg-red-900/30 opacity-0 group-hover:opacity-100 transition-all"
           title="Remove"
         >
@@ -435,9 +471,14 @@ export function UploadDialog({
               {/* Buttons Row */}
               <div className="flex items-center justify-center gap-4 mb-6">
                 <Button
+                  type="button"
                   variant="outline"
                   size="lg"
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    fileInputRef.current?.click();
+                  }}
                   className="min-w-[140px] h-11 font-medium border-2 hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition-all"
                 >
                   <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -446,9 +487,14 @@ export function UploadDialog({
                   Select Files
                 </Button>
                 <Button
+                  type="button"
                   variant="outline"
                   size="lg"
-                  onClick={() => folderInputRef.current?.click()}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    folderInputRef.current?.click();
+                  }}
                   className="min-w-[140px] h-11 font-medium border-2 hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition-all"
                 >
                   <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -474,6 +520,7 @@ export function UploadDialog({
               type="file"
               multiple
               onChange={handleFileInputChange}
+              onClick={(e) => e.stopPropagation()}
               className="hidden"
             />
             <input
@@ -482,6 +529,7 @@ export function UploadDialog({
               // @ts-expect-error - webkitdirectory is not in types but works
               webkitdirectory="true"
               onChange={handleFileInputChange}
+              onClick={(e) => e.stopPropagation()}
               className="hidden"
             />
           </div>
@@ -495,9 +543,14 @@ export function UploadDialog({
                 </span>
                 <div className="flex gap-2">
                   <Button
+                    type="button"
                     variant="ghost"
                     size="sm"
-                    onClick={() => fileInputRef.current?.click()}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      fileInputRef.current?.click();
+                    }}
                     className="text-sm"
                   >
                     <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -506,9 +559,14 @@ export function UploadDialog({
                     Add Files
                   </Button>
                   <Button
+                    type="button"
                     variant="ghost"
                     size="sm"
-                    onClick={() => folderInputRef.current?.click()}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      folderInputRef.current?.click();
+                    }}
                     className="text-sm"
                   >
                     <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -527,10 +585,11 @@ export function UploadDialog({
 
         {/* Actions */}
         <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
-          <Button variant="outline" onClick={handleClose} size="lg">
+          <Button type="button" variant="outline" onClick={handleClose} size="lg">
             Cancel
           </Button>
           <Button
+            type="button"
             onClick={handleUpload}
             disabled={totalFiles === 0}
             size="lg"
