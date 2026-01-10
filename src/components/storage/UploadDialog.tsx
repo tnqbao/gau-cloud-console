@@ -70,11 +70,6 @@ export function UploadDialog({
 
   // Process files with folder structure
   const processFiles = useCallback(async (items: DataTransferItemList | FileList) => {
-    console.log('[UploadDialog] processFiles called', {
-      itemsLength: items.length,
-      isFileList: 'length' in items && items[0] instanceof File
-    });
-
     // Fetch existing files from bucket API to check for duplicates
     let existingFilesInBucket = new Set<string>();
     try {
