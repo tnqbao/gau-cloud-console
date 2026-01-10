@@ -4,6 +4,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { useUploadManager, formatBytes } from "@/contexts/UploadManagerContext";
 import { cn } from "@/lib/utils";
 import { FileIcon } from "@/components/files/FileIcon";
+import { api } from "@/lib/api";
+import { STORAGE_ENDPOINTS } from "@/lib/config";
 
 interface UploadDialogProps {
   bucketId: string;
@@ -68,20 +70,35 @@ export function UploadDialog({
 
   // Process files with folder structure
   const processFiles = useCallback(async (items: DataTransferItemList | FileList) => {
+    // Fetch existing files from bucket API to check for duplicates
+    let existingFilesInBucket = new Set<string>();
+    try {
+      const endpoint = STORAGE_ENDPOINTS.bucketObjects(bucketId, currentPath);
+      const response = await api.get<{ objects?: Array<{ origin_name: string }> }>(endpoint);
+      existingFilesInBucket = new Set((response.objects || []).map(obj => obj.origin_name));
+    } catch (error) {
+      console.warn('Failed to fetch existing files for duplicate check:', error);
+    }
+
     const newItems: FileItem[] = [];
-    const fileNames = new Set<string>(fileItems.map(item => item.name));
+    // Track both files in dialog and files in bucket
+    const fileNames = new Set<string>([
+      ...fileItems.map(item => item.name),
+      ...Array.from(existingFilesInBucket)
+    ]);
 
     if ('length' in items && items[0] instanceof File) {
       // FileList from input
       const files = Array.from(items as FileList);
       for (const file of files) {
+        // Check against both dialog files and bucket files
         const uniqueName = getUniqueFileName(file.name, fileNames);
         fileNames.add(uniqueName);
 
-        // Create new File with unique name if needed
+        // Create new File with renamed filename if duplicate was found
         const finalFile = uniqueName === file.name
           ? file
-          : new File([file], uniqueName, { type: file.type });
+          : new File([file], uniqueName, { type: file.type, lastModified: file.lastModified });
 
         newItems.push({
           id: `${Date.now()}-${Math.random()}`,
@@ -109,7 +126,7 @@ export function UploadDialog({
 
               const finalFile = uniqueName === file.name
                 ? file
-                : new File([file], uniqueName, { type: file.type });
+                : new File([file], uniqueName, { type: file.type, lastModified: file.lastModified });
 
               resolve([{
                 id: `${Date.now()}-${Math.random()}`,
@@ -159,7 +176,7 @@ export function UploadDialog({
     }
 
     setFileItems((prev) => [...prev, ...newItems]);
-  }, [fileItems]);
+  }, [fileItems, bucketId, currentPath]);
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {

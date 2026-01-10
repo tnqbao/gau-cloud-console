@@ -503,6 +503,7 @@ export function UploadManagerProvider({ children }: { children: ReactNode }) {
         objects?: Array<{ origin_name: string }>;
       }>(url);
 
+      // Get files that already exist in bucket
       const existingNames = new Set((response.objects || []).map(obj => obj.origin_name));
 
       if (!existingNames.has(fileName)) {
@@ -541,9 +542,37 @@ export function UploadManagerProvider({ children }: { children: ReactNode }) {
   const addFiles = useCallback(async (bucketId: string, files: File[], path: string = "") => {
     // Check for duplicate names and rename if necessary
     const processedFiles: Array<{ originalFile: File; finalFile: File }> = [];
+    const usedNames = new Set<string>(); // Track names used in this batch
 
     for (const file of files) {
-      const uniqueName = await getUniqueFileName(bucketId, file.name, path);
+      let uniqueName = await getUniqueFileName(bucketId, file.name, path);
+
+      // Also check against other files in the same upload batch
+      if (usedNames.has(uniqueName)) {
+        const lastDotIndex = uniqueName.lastIndexOf(".");
+        const hasExtension = lastDotIndex > 0 && lastDotIndex < uniqueName.length - 1;
+
+        let baseName = uniqueName;
+        let extension = "";
+
+        if (hasExtension) {
+          baseName = uniqueName.substring(0, lastDotIndex);
+          extension = uniqueName.substring(lastDotIndex);
+        }
+
+        let counter = 1;
+        let newName = `${baseName}(${counter})${extension}`;
+
+        while (usedNames.has(newName)) {
+          counter++;
+          newName = `${baseName}(${counter})${extension}`;
+        }
+
+        uniqueName = newName;
+      }
+
+      usedNames.add(uniqueName);
+
       const finalFile = uniqueName === file.name
         ? file
         : new File([file], uniqueName, { type: file.type, lastModified: file.lastModified });
