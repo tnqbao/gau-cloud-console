@@ -185,8 +185,8 @@ export default function ObjectStorageDocPage() {
                 label="Base URL"
               />
 
-              <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-md p-4">
-                <p className="text-sm font-semibold mb-1">Authentication Required</p>
+              <div className="border-l-4 border-blue-500 dark:border-blue-400 bg-card rounded-md p-4">
+                <p className="text-sm font-semibold mb-1 text-blue-600 dark:text-blue-400">Authentication Required</p>
                 <p className="text-sm">
                   To use the API, you need an <strong>Access Key</strong> and <strong>Secret Key</strong>.
                   If you don&apos;t have them yet, please create them at{' '}
@@ -256,10 +256,10 @@ export default function ObjectStorageDocPage() {
                       </tbody>
                     </table>
 
-                    <div className="mt-3 bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 rounded-md p-4">
-                      <p className="text-sm font-semibold mb-2">Important Note</p>
+                    <div className="mt-3 border-l-4 border-yellow-500 dark:border-yellow-400 bg-card rounded-md p-4">
+                      <p className="text-sm font-semibold mb-2 text-yellow-600 dark:text-yellow-400">Important Note</p>
                       <p className="text-sm">If body is empty, use this hash:</p>
-                      <code className="block mt-2 text-xs font-mono break-all bg-background p-2 rounded">
+                      <code className="block mt-2 text-xs font-mono break-all bg-muted p-2 rounded">
                         e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
                       </code>
                     </div>

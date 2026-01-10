@@ -43,7 +43,7 @@ export default function HomePage() {
             </h1>
             <p className="mx-auto mt-4 sm:mt-6 max-w-2xl text-base sm:text-lg text-muted-foreground px-2">
               Self-hosted, open source cloud infrastructure. Object storage, IAM, message queues,
-              and more — built for developers who value control and transparency.
+              and more - built for developers who value control and transparency.
             </p>
             <div className="mt-8 sm:mt-10 flex flex-col items-center justify-center gap-3 sm:gap-4 sm:flex-row">
               <Link href="/register" className="w-full sm:w-auto">
