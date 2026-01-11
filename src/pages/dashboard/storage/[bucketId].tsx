@@ -106,14 +106,37 @@ function ObjectRow({ object, bucketId, bucketName, onFolderClick, onDelete, isSe
     document.body.removeChild(a);
   };
 
-  const handleShareLink = async () => {
+  const handleView = () => {
+    if (object.type !== "file") return;
+    setIsMenuOpen(false);
+
+    // Open in new tab for preview
+    const cdnUrl = getCdnUrl();
+    window.open(cdnUrl, "_blank");
+  };
+
+  const handleSharePreviewLink = async () => {
     if (object.type !== "file") return;
     setIsMenuOpen(false);
 
     const cdnUrl = getCdnUrl();
     try {
       await navigator.clipboard.writeText(cdnUrl);
-      onShowToast("Link copied to clipboard!", "success");
+      onShowToast("Preview link copied to clipboard!", "success");
+    } catch {
+      onShowToast("Failed to copy link", "error");
+    }
+  };
+
+  const handleShareDownloadLink = async () => {
+    if (object.type !== "file") return;
+    setIsMenuOpen(false);
+
+    const cdnUrl = getCdnUrl();
+    const downloadUrl = `${cdnUrl}?mode=download`;
+    try {
+      await navigator.clipboard.writeText(downloadUrl);
+      onShowToast("Download link copied to clipboard!", "success");
     } catch {
       onShowToast("Failed to copy link", "error");
     }
@@ -229,7 +252,7 @@ function ObjectRow({ object, bucketId, bucketName, onFolderClick, onDelete, isSe
           {isMenuOpen && menuPosition && (
               <div
                   ref={menuRef}
-                  className="fixed w-48 bg-background border rounded-md shadow-lg z-50"
+                  className="fixed w-56 bg-background border rounded-md shadow-lg z-50"
                   style={{
                     top: `${menuPosition.top}px`,
                     right: `${menuPosition.right}px`,
@@ -237,6 +260,16 @@ function ObjectRow({ object, bucketId, bucketName, onFolderClick, onDelete, isSe
               >
                 {object.type === "file" && (
                     <>
+                      <button
+                          onClick={handleView}
+                          className="w-full px-4 py-2 text-left text-sm hover:bg-muted flex items-center gap-2"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                        <span>View</span>
+                      </button>
                       <button
                           onClick={handleDownload}
                           className="w-full px-4 py-2 text-left text-sm hover:bg-muted flex items-center gap-2"
@@ -248,16 +281,28 @@ function ObjectRow({ object, bucketId, bucketName, onFolderClick, onDelete, isSe
                         </svg>
                         <span>Download</span>
                       </button>
+                      <div className="border-t my-1"></div>
                       <button
-                          onClick={handleShareLink}
+                          onClick={handleSharePreviewLink}
                           className="w-full px-4 py-2 text-left text-sm hover:bg-muted flex items-center gap-2"
                       >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
                           <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
                         </svg>
-                        <span>Share Link</span>
+                        <span>Share Preview Link</span>
                       </button>
+                      <button
+                          onClick={handleShareDownloadLink}
+                          className="w-full px-4 py-2 text-left text-sm hover:bg-muted flex items-center gap-2"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                        </svg>
+                        <span>Share Download Link</span>
+                      </button>
+                      <div className="border-t my-1"></div>
                     </>
                 )}
                 <button
