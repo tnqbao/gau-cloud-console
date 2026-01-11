@@ -4,8 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { useUploadManager, formatBytes } from "@/contexts/UploadManagerContext";
 import { cn } from "@/lib/utils";
 import { FileIcon } from "@/components/files/FileIcon";
-import { api } from "@/lib/api";
-import { STORAGE_ENDPOINTS } from "@/lib/config";
+import type { BucketObject } from "@/types";
 
 interface UploadDialogProps {
   bucketId: string;
@@ -13,6 +12,7 @@ interface UploadDialogProps {
   onClose: () => void;
   onUploadStarted?: (foldersToCreate: string[]) => void;
   currentPath?: string;
+  existingObjects?: BucketObject[];
 }
 
 interface FileItem {
@@ -58,6 +58,7 @@ export function UploadDialog({
   onClose,
   onUploadStarted,
   currentPath = "",
+  existingObjects = [],
 }: UploadDialogProps) {
   const [fileItems, setFileItems] = useState<FileItem[]>([]);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
@@ -70,27 +71,18 @@ export function UploadDialog({
 
   // Process files with folder structure
   const processFiles = useCallback(async (items: DataTransferItemList | FileList) => {
-    // Fetch existing files from bucket API to check for duplicates
-    let existingFilesInBucket = new Set<string>();
-    try {
-      const endpoint = STORAGE_ENDPOINTS.bucketObjects(bucketId, currentPath);
-      const response = await api.get<{ objects?: Array<{ origin_name: string }> }>(endpoint);
-      existingFilesInBucket = new Set((response.objects || []).map(obj => obj.origin_name));
-    } catch (error) {
-      console.warn('Failed to fetch existing files for duplicate check:', error);
-    }
+    // Use existing objects from props instead of fetching
+    // Filter only files (not folders) and get their names
+    const existingFilesInBucket = new Set<string>(
+      existingObjects.filter(obj => obj.type === 'file').map(obj => obj.name)
+    );
 
     // Check if this is a FileList (from file input)
     if ('length' in items && items[0] instanceof File) {
       // FileList from input
       const files = Array.from(items as FileList);
-      console.log('[UploadDialog] Processing FileList', { filesCount: files.length });
 
       setFileItems((currentFileItems) => {
-        console.log('[UploadDialog] setFileItems callback', {
-          currentItemsCount: currentFileItems.length,
-          existingInBucket: existingFilesInBucket.size
-        });
 
         // Track both files in dialog and files in bucket
         const fileNames = new Set<string>([
@@ -105,9 +97,15 @@ export function UploadDialog({
           fileNames.add(uniqueName);
 
           // Create new File with renamed filename if duplicate was found
-          const finalFile = uniqueName === file.name
-            ? file
-            : new File([file], uniqueName, { type: file.type, lastModified: file.lastModified });
+          let finalFile: File = file;
+
+          if (uniqueName !== file.name) {
+            const blob = file.slice(0, file.size, file.type);
+            finalFile = new File([blob], uniqueName, {
+              type: file.type,
+              lastModified: file.lastModified
+            });
+          }
 
           newItems.push({
             id: `${Date.now()}-${Math.random()}`,
@@ -118,9 +116,7 @@ export function UploadDialog({
           });
         }
 
-        console.log('[UploadDialog] Created newItems', { count: newItems.length });
         const result = [...currentFileItems, ...newItems];
-        console.log('[UploadDialog] Returning updated items', { totalCount: result.length });
         return result;
       });
       return; // Early return to prevent processing as DataTransferItemList
@@ -186,15 +182,11 @@ export function UploadDialog({
     }
 
     setFileItems((prev) => [...prev, ...draggedItems]);
-  }, [bucketId, currentPath]);
+  }, [existingObjects]);
 
   const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     e.preventDefault();
     e.stopPropagation();
-    console.log('[UploadDialog] File input changed', {
-      filesCount: e.target.files?.length,
-      files: e.target.files ? Array.from(e.target.files).map(f => f.name) : []
-    });
     if (e.target.files && e.target.files.length > 0) {
       await processFiles(e.target.files);
     }
@@ -312,9 +304,13 @@ export function UploadDialog({
     }
 
     // Start all uploads
+    // Only include file names (not folders) from existing objects
+    const existingFileNames = new Set(
+      existingObjects.filter(obj => obj.type === 'file').map(obj => obj.name)
+    );
     const uploadPromises: Promise<void>[] = [];
     for (const [path, files] of Object.entries(pathGroups)) {
-      uploadPromises.push(addFiles(bucketId, files, path));
+      uploadPromises.push(addFiles(bucketId, files, path, existingFileNames));
     }
 
     // Wait for uploads to be queued
