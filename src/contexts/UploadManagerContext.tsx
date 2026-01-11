@@ -47,7 +47,7 @@ export interface UploadedObject {
 interface UploadManagerContextType {
   uploadingFiles: UploadingFile[];
   completedFiles: UploadResult[];
-  addFiles: (bucketId: string, files: File[], path?: string) => Promise<void>;
+  addFiles: (bucketId: string, files: File[], path?: string, existingNames?: Set<string>) => Promise<void>;
   cancelUpload: (fileId: string) => void;
   cancelAllUploads: () => void;
   clearCompleted: () => void;
@@ -181,6 +181,7 @@ export function UploadManagerProvider({ children }: { children: ReactNode }) {
       formData.append("file", file);
       if (path) formData.append("path", path);
 
+
       const token = getToken();
       const headers: HeadersInit = { "X-Device-ID": getDeviceId() };
       if (token) (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
@@ -221,7 +222,6 @@ export function UploadManagerProvider({ children }: { children: ReactNode }) {
                 file_hash: response.object.file_hash || "",
               };
 
-              console.log('[UploadManager] Direct upload completed:', completeObject.origin_name, 'parent_path:', completeObject.parent_path);
 
               resolve({
                 success: true,
@@ -456,7 +456,6 @@ export function UploadManagerProvider({ children }: { children: ReactNode }) {
               message: "Completed"
             });
 
-            console.log('[UploadManager] Chunked upload completed:', completeObject.origin_name, 'parent_path:', completeObject.parent_path);
 
             return { success: true, fileId: id, object: completeObject };
           }
@@ -492,90 +491,56 @@ export function UploadManagerProvider({ children }: { children: ReactNode }) {
   }, [directUpload, chunkedUpload, removeUploadingFile, addCompletedFile]);
 
   // Helper to get unique filename if conflict
-  const getUniqueFileName = async (bucketId: string, fileName: string, path: string): Promise<string> => {
-    try {
-      // Fetch existing files in the target path
-      // Construct URL properly to avoid 301 redirects
-      const pathParam = path ? `?path=${encodeURIComponent(path)}` : '';
-      const url = `${BACKEND_API_URL}/api/v1/cloud/buckets/${bucketId}/objects${pathParam}`;
-
-      const response = await apiRequest<{
-        objects?: Array<{ origin_name: string }>;
-      }>(url);
-
-      // Get files that already exist in bucket
-      const existingNames = new Set((response.objects || []).map(obj => obj.origin_name));
-
-      if (!existingNames.has(fileName)) {
-        return fileName;
-      }
-
-      // File exists, generate unique name
-      const lastDotIndex = fileName.lastIndexOf(".");
-      const hasExtension = lastDotIndex > 0 && lastDotIndex < fileName.length - 1;
-
-      let baseName = fileName;
-      let extension = "";
-
-      if (hasExtension) {
-        baseName = fileName.substring(0, lastDotIndex);
-        extension = fileName.substring(lastDotIndex);
-      }
-
-      let counter = 1;
-      let newName = `${baseName}(${counter})${extension}`;
-
-      while (existingNames.has(newName)) {
-        counter++;
-        newName = `${baseName}(${counter})${extension}`;
-      }
-
-      return newName;
-    } catch (error) {
-      // If error checking, just return original name
-      console.warn('Error checking duplicate filename:', error);
+  const getUniqueFileName = (fileName: string, existingNames: Set<string>): string => {
+    if (!existingNames.has(fileName)) {
       return fileName;
     }
+
+    // File exists, generate unique name
+    const lastDotIndex = fileName.lastIndexOf(".");
+    const hasExtension = lastDotIndex > 0 && lastDotIndex < fileName.length - 1;
+
+    let baseName = fileName;
+    let extension = "";
+
+    if (hasExtension) {
+      baseName = fileName.substring(0, lastDotIndex);
+      extension = fileName.substring(lastDotIndex);
+    }
+
+    let counter = 1;
+    let newName = `${baseName}(${counter})${extension}`;
+
+    while (existingNames.has(newName)) {
+      counter++;
+      newName = `${baseName}(${counter})${extension}`;
+    }
+
+    return newName;
   };
 
   // Add files to upload queue
-  const addFiles = useCallback(async (bucketId: string, files: File[], path: string = "") => {
+  const addFiles = useCallback(async (bucketId: string, files: File[], path: string = "", existingNames: Set<string> = new Set()) => {
     // Check for duplicate names and rename if necessary
     const processedFiles: Array<{ originalFile: File; finalFile: File }> = [];
-    const usedNames = new Set<string>(); // Track names used in this batch
+    const usedNames = new Set<string>(existingNames); // Start with existing names from bucket
 
     for (const file of files) {
-      let uniqueName = await getUniqueFileName(bucketId, file.name, path);
+      const uniqueName = getUniqueFileName(file.name, usedNames);
 
-      // Also check against other files in the same upload batch
-      if (usedNames.has(uniqueName)) {
-        const lastDotIndex = uniqueName.lastIndexOf(".");
-        const hasExtension = lastDotIndex > 0 && lastDotIndex < uniqueName.length - 1;
-
-        let baseName = uniqueName;
-        let extension = "";
-
-        if (hasExtension) {
-          baseName = uniqueName.substring(0, lastDotIndex);
-          extension = uniqueName.substring(lastDotIndex);
-        }
-
-        let counter = 1;
-        let newName = `${baseName}(${counter})${extension}`;
-
-        while (usedNames.has(newName)) {
-          counter++;
-          newName = `${baseName}(${counter})${extension}`;
-        }
-
-        uniqueName = newName;
-      }
-
+      // Add to usedNames to prevent duplicates within this batch
       usedNames.add(uniqueName);
 
-      const finalFile = uniqueName === file.name
-        ? file
-        : new File([file], uniqueName, { type: file.type, lastModified: file.lastModified });
+      let finalFile: File = file;
+
+      if (uniqueName !== file.name) {
+        // Create a new File with the unique name
+        const blob = file.slice(0, file.size, file.type);
+        finalFile = new File([blob], uniqueName, {
+          type: file.type,
+          lastModified: file.lastModified
+        });
+      }
 
       processedFiles.push({ originalFile: file, finalFile });
     }

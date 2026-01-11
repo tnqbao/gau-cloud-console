@@ -1033,6 +1033,7 @@ export default function BucketDetailPage() {
                 onClose={() => setIsUploadDialogOpen(false)}
                 onUploadStarted={handleUploadStarted}
                 currentPath={currentPath}
+                existingObjects={objects}
             />
 
             {/* Create Folder Dialog */}
